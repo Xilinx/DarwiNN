@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
-import args
 import darwinn as dwn
 import argparse
 
@@ -99,7 +98,7 @@ if __name__ == "__main__":
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
     train_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
-    test_dataset = datasets.MNIST('MNIST_data'+str(env.rank), train=False, download=False, transform=dataset_transform)
+    test_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     loss_criterion = F.nll_loss
     
