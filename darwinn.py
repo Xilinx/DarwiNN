@@ -84,9 +84,9 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.population = (population // environment.number_nodes) * environment.number_nodes #round down requested population to something divisible by number of nodes
         self.sigma = sigma
         self.folds = self.population / environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
-        self.loss_adapt_list = [torch.zeros((folding,), device=self.environment.device) for i in range(self.environment.number_nodes)]
-        self.loss_adapt = torch.zeros((population,), device=self.environment.device)
-        self.fitness = torch.zeros((folding,), device=self.environment.device)
+        self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
+        self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
+        self.fitness = torch.zeros((self.folds,), device=self.environment.device)
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):

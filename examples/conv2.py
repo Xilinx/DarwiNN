@@ -85,6 +85,8 @@ if __name__ == "__main__":
                         help='population size (default: 100)')
     parser.add_argument('--noise-dist', type=str, default="Gaussian",
                         help='noise distribution (default: Gaussian)')
+    parser.add_argument('--sigma', type=float, default=0.01, metavar='S',
+                        help='noise variance (default: 0.01)')
     parser.add_argument('--sampling', type=str, default="Antitethic",
                         help='sampling strategy (default: Antitethic)')
 
