@@ -92,6 +92,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
         self.fitness = torch.zeros((self.folds,), device=self.environment.device)
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
+        self.update_theta()
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):
@@ -120,22 +121,23 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
 
     def adapt(self):
         #regenerate noise
-        epsilon = []
+        epsilon = torch.zeros((self.population,self.num_parameters), device=self.environment.device)
         for i in range(self.population):
-            epsilon += [gen_epsilon(i//self.folds,i%self.folds)]
+            epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
         #gather fitness to node 0 to adapt theta
         self.environment.gather(self.fitness,0,self.loss_adapt_list)
         torch.cat(self.loss_adapt_list, out=self.loss_adapt)
         #update model on rank 0
-        if self.rank == 0:
+        if self.environment.rank == 0:
             self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
             gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
-            step = self.optimizer.step(-gradient)
-            self.theta = self.theta + step.view(self.num_parameters)
+            self.update_grad(-gradient)
+            step = self.optimizer.step()
+            self.update_theta()
         #broadcast
         self.environment.broadcast(self.theta,0)
         #update local model from (broadcast) theta
-        update_model(self.theta)
+        self.update_model(self.theta)
         self.generation += 1
     
     def gen_noise(self):
@@ -178,9 +180,27 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
     """Updates the NN model from the value of Theta"""
     def update_model(self, theta):
         idx = 0
-        i = 0
         for param in self.model.parameters():
             flattened_dim = param.numel()
             temp = theta[idx:idx+flattened_dim]
             temp = temp.view_as(param)
             param.data = temp.data
+            idx += flattened_dim
+
+    """Updates the NN model gradients"""
+    def update_grad(self, grad):
+        idx = 0
+        for param in self.model.parameters():
+            flattened_dim = param.numel()
+            temp = grad[idx:idx+flattened_dim]
+            temp = temp.view_as(param.data)
+            param.grad = temp.data
+            idx += flattened_dim
+
+    """Updates Theta from the NN model"""
+    def update_theta(self):
+        idx = 0
+        for param in self.model.parameters():
+            flattened_dim = param.numel()
+            self.theta[idx:idx+flattened_dim] = param.data.flatten()
+            idx += flattened_dim

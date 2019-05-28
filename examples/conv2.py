@@ -29,16 +29,16 @@ class Conv2(nn.Module):
     x = self.fc(x)
     return F.log_softmax(x, dim=0)
     
-def train(epoch):
+def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         ne_optimizer.eval_fitness(data, target)
         ne_optimizer.adapt()#no backward pass, adapt instead of step
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(epoch, batch_idx * len(data), len(train_sampler),100. * batch_idx / len(train_loader), ne_optimizer.get_loss()))
+            print('Train Epoch: {}\tLoss: {:.6f}'.format(epoch, ne_optimizer.get_loss()))
 
-def test(ne_optimizer):
+def test(test_loader, ne_optimizer, args):
     test_loss = 0.
     test_accuracy = 0.
     for data, target in test_loader:
@@ -53,8 +53,8 @@ def test(ne_optimizer):
 
     # use test_sampler to determine the number of examples in
     # this worker's partition.
-    test_loss /= len(test_sampler)
-    test_accuracy /= len(test_sampler)
+    test_loss /= len(test_loader)
+    test_accuracy /= len(test_loader)
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {:.2f}%\n'.format(test_loss, 100. * test_accuracy))
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, population=args.population, distribution=args.noise_dist, sampling=args.sampling)
     
     for epoch in range(1, args.epochs + 1):
-        train(epoch)
+        train(epoch, train_loader, ne_optimizer, args)
         if env.rank() == 0:
-            test()
+            test(test_loader, ne_optimizer, args)
 
