@@ -25,11 +25,13 @@ class DarwiNNEnvironment(object):
         torch.manual_seed(seed)
         print("Pin local rank ",self.local_rank," to GPU ",self.local_rank%torch.cuda.device_count()," of ",torch.cuda.device_count())
         self.cuda = cuda
-        if cuda:
+        if self.cuda:
             #pin each local rank to a GPU round-robin
-            torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
-            torch.cuda.manual_seed(seed)
+            self.device = torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
+        else:
+            self.device = torch.device('cpu')
         #TODO: auto-tune stuff could go in here
+        #e.g. compute the maximum folding given the GPU/host memory, device, number of GPUs, and local ranks
         
     def rank(self):
         return self.rank
@@ -79,14 +81,17 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.distribution = distribution
         self.sampling = sampling
         self.model = model
+        self.num_parameters = self.count_num_parameters()
         self.criterion = criterion
         self.device = device
         self.population = (population // environment.number_nodes) * environment.number_nodes #round down requested population to something divisible by number of nodes
         self.sigma = sigma
-        self.folds = self.population / environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
+        self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
+        print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
         self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
         self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
         self.fitness = torch.zeros((self.folds,), device=self.environment.device)
+        self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):
@@ -102,16 +107,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             p = param.data.cpu().numpy()
             orig_params.append(p.flatten())
         orig_params_flat = np.concatenate(orig_params)
-        return len(orig_params_flat) 
-    
-    def update_model(self, flat_param):
-        idx = 0
-        i = 0
-        for param in self.model.parameters():
-            flattened_dim = param.numel()
-            temp = flat_param[idx:idx+flattened_dim]
-            temp = temp.view_as(param)
-            param.data = temp.data
+        return len(orig_params_flat)
 
     def compute_centered_ranks(self,x):
         centered = torch.zeros(len(x), dtype = torch.float, device = self.device)
@@ -122,11 +118,11 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         centered = centered - 0.5
         return centered
 
-    def adapt(self, num_parameters):
+    def adapt(self):
         #regenerate noise
         epsilon = []
-        for i in range(self.environment.number_nodes):
-            epsilon += gen_epsilon(i)
+        for i in range(self.population):
+            epsilon += [gen_epsilon(i//self.folds,i%self.folds)]
         #gather fitness to node 0 to adapt theta
         self.environment.gather(self.fitness,0,self.loss_adapt_list)
         torch.cat(self.loss_adapt_list, out=self.loss_adapt)
@@ -135,32 +131,30 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
             gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
             step = self.optimizer.step(-gradient)
-            self.theta = self.theta + step.view(num_parameters)
+            self.theta = self.theta + step.view(self.num_parameters)
         #broadcast
         self.environment.broadcast(self.theta,0)
         #update local model from (broadcast) theta
-        update_model()
+        update_model(self.theta)
         self.generation += 1
     
     def gen_noise(self):
         return self.randfunc(self.num_parameters, device=self.device)*self.sigma
     
-    def gen_epsilon(self,rank):
-        for fold_index in range(self.folds):
-            #generate PRNG seed from generation, rank and fold index
-            noise_id = self.generation*self.population + rank*self.folds + fold_index
-            torch.manual_seed(noise_id)
-            if (self.sampling == "Antithetic"):
-                if (fold_index < int(self.folds/2)):
-                    epsilon[fold_index] = self.gen_noise()
-                else:
-                    epsilon[fold_index] = -epsilon_minion[fold_index - int(self.folds/2)]
-            else:
-                epsilon[fold_index] = self.gen_noise()
+    def gen_epsilon(self, rank, fold_index):
+        noise_id = self.generation*self.population + rank*self.folds + fold_index
+        torch.manual_seed(noise_id)
+        if (self.sampling == "Antithetic"):
+            if (fold_index > int(self.folds/2)):
+                noise_id = noise_id - int(self.folds/2)
+                torch.manual_seed(noise_id)
+                epsilon = -self.gen_noise()
+        else:
+            epsilon = self.gen_noise()
         return epsilon
 
-    def mutate(self):
-        epsilon = gen_epsilon(self.environment.rank)
+    def mutate(self, fold_index):
+        epsilon = self.gen_epsilon(self.environment.rank, fold_index)
         theta_noisy = self.theta + epsilon
         return theta_noisy
     
@@ -169,23 +163,24 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.loss = criterion(output, target).item()
         return output
     
-    def eval_fitness(data, target):
+    def eval_fitness(self, data, target):
         #for each in local population, mutate then evaluate, resulting in a list of fitnesses
-        loss = []
         for i in range(self.folds):
-            mutated_theta = mutate()
-            output = mutated_theta(data)
-            loss += [self.criterion(output, target)]
+            self.update_model(self.mutate(i))
+            if self.environment.cuda:
+                self.model.cuda()
+            output = self.model(data)
+            self.fitness[i] = self.criterion(output, target)
         
-    def get_loss():
+    def get_loss(self):
         return self.loss
         
     """Updates the NN model from the value of Theta"""
-    def update_model():
+    def update_model(self, theta):
         idx = 0
         i = 0
         for param in self.model.parameters():
             flattened_dim = param.numel()
-            temp = self.theta[idx:idx+flattened_dim]
+            temp = theta[idx:idx+flattened_dim]
             temp = temp.view_as(param)
             param.data = temp.data
