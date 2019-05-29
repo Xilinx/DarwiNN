@@ -36,7 +36,7 @@ def train(epoch, train_loader, ne_optimizer, args):
         ne_optimizer.eval_fitness(data, target)
         ne_optimizer.adapt()#no backward pass, adapt instead of step
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {}\tLoss: {:.6f}'.format(epoch, ne_optimizer.get_loss()))
+            print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 
 def test(test_loader, ne_optimizer, args):
     test_loss = 0.
@@ -113,6 +113,6 @@ if __name__ == "__main__":
     
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)
-        if env.rank() == 0:
+        if env.rank == 0:
             test(test_loader, ne_optimizer, args)
 

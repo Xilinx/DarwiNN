@@ -160,9 +160,9 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         theta_noisy = self.theta + epsilon
         return theta_noisy
     
-    def eval_theta(data, target):
-        output = self.model(data, target)
-        self.loss = criterion(output, target).item()
+    def eval_theta(self, data, target):
+        output = self.model(data)
+        self.loss = self.criterion(output, target).item()
         return output
     
     def eval_fitness(self, data, target):
