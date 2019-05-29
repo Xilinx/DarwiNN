@@ -87,8 +87,8 @@ if __name__ == "__main__":
                         help='noise distribution (default: Gaussian)')
     parser.add_argument('--sigma', type=float, default=0.01, metavar='S',
                         help='noise variance (default: 0.01)')
-    parser.add_argument('--sampling', type=str, default="Antitethic",
-                        help='sampling strategy (default: Antitethic)')
+    parser.add_argument('--sampling', type=str, default="Antithetic",
+                        help='sampling strategy (default: Antithetic)')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()

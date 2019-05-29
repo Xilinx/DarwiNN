@@ -80,7 +80,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.optimizer = optimizer
         self.distribution = distribution
         self.sampling = sampling
-        self.model = model
+        self.model_adapt = model
+        self.model = copy.deepcopy(model)
         self.num_parameters = self.count_num_parameters()
         self.criterion = criterion
         self.device = device
@@ -88,8 +89,13 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.sigma = sigma
         self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
         print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
-        self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
-        self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
+        if self.environment.rank == 0:
+
+            self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
+            self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
+        else:
+            self.loss_adapt_list = []
+            self.loss_adapt = None
         self.fitness = torch.zeros((self.folds,), device=self.environment.device)
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         self.update_theta()
@@ -126,9 +132,9 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
         #gather fitness to node 0 to adapt theta
         self.environment.gather(self.fitness,0,self.loss_adapt_list)
-        torch.cat(self.loss_adapt_list, out=self.loss_adapt)
         #update model on rank 0
         if self.environment.rank == 0:
+            torch.cat(self.loss_adapt_list, out=self.loss_adapt)
             self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
             gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
             self.update_grad(-gradient)
@@ -146,11 +152,10 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
     def gen_epsilon(self, rank, fold_index):
         noise_id = self.generation*self.population + rank*self.folds + fold_index
         torch.manual_seed(noise_id)
-        if (self.sampling == "Antithetic"):
-            if (fold_index > int(self.folds/2)):
-                noise_id = noise_id - int(self.folds/2)
-                torch.manual_seed(noise_id)
-                epsilon = -self.gen_noise()
+        if (self.sampling == "Antithetic") and (fold_index >= int(self.folds/2)):
+            noise_id = noise_id - int(self.folds/2)
+            torch.manual_seed(noise_id)
+            epsilon = -self.gen_noise()
         else:
             epsilon = self.gen_noise()
         return epsilon
@@ -161,7 +166,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         return theta_noisy
     
     def eval_theta(self, data, target):
-        output = self.model(data)
+        output = self.model_adapt(data)
         self.loss = self.criterion(output, target).item()
         return output
     
@@ -173,6 +178,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
                 self.model.cuda()
             output = self.model(data)
             self.fitness[i] = self.criterion(output, target)
+        self.loss = torch.mean(self.fitness).item()
         
     def get_loss(self):
         return self.loss
@@ -190,7 +196,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
     """Updates the NN model gradients"""
     def update_grad(self, grad):
         idx = 0
-        for param in self.model.parameters():
+        for param in self.model_adapt.parameters():
             flattened_dim = param.numel()
             temp = grad[idx:idx+flattened_dim]
             temp = temp.view_as(param.data)
@@ -200,7 +206,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
     """Updates Theta from the NN model"""
     def update_theta(self):
         idx = 0
-        for param in self.model.parameters():
+        for param in self.model_adapt.parameters():
             flattened_dim = param.numel()
             self.theta[idx:idx+flattened_dim] = param.data.flatten()
             idx += flattened_dim
