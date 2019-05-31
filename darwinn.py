@@ -3,7 +3,7 @@ import sys
 import os
 import torch
 import torch.distributed as t_d
-import multiprocessing as mp
+import torch.multiprocessing as mp
 import copy
 import numpy as np
 import math
@@ -23,12 +23,14 @@ class DarwiNNEnvironment(object):
         mp.set_start_method('spawn', force = True)
         #configure GPU environment if needed
         torch.manual_seed(seed)
-        print("Pin local rank ",self.local_rank," to GPU ",self.local_rank%torch.cuda.device_count()," of ",torch.cuda.device_count())
         self.cuda = cuda
         if self.cuda:
             #pin each local rank to a GPU round-robin
+            print("Using GPUs")
+            print("Pin local rank ",self.local_rank," to GPU ",self.local_rank%torch.cuda.device_count()," of ",torch.cuda.device_count())
             self.device = torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
         else:
+            print("Using CPUs")
             self.device = torch.device('cpu')
         #TODO: auto-tune stuff could go in here
         #e.g. compute the maximum folding given the GPU/host memory, device, number of GPUs, and local ranks
@@ -138,7 +140,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
             gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
             self.update_grad(-gradient)
-            step = self.optimizer.step()
+            self.optimizer.step()
             self.update_theta()
         #broadcast
         self.environment.broadcast(self.theta,0)
