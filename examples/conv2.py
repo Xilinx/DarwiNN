@@ -54,7 +54,7 @@ def test(test_loader, ne_optimizer, args):
     # use test_sampler to determine the number of examples in
     # this worker's partition.
     test_loss /= len(test_loader)
-    test_accuracy /= len(test_loader)
+    test_accuracy /= len(test_loader.dataset)
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {:.2f}%\n'.format(test_loss, 100. * test_accuracy))
 
