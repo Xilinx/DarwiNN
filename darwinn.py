@@ -92,7 +92,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
         print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
         if self.environment.rank == 0:
-
             self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
             self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
         else:
@@ -179,7 +178,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             if self.environment.cuda:
                 self.model.cuda()
             output = self.model(data)
-            self.fitness[i] = self.criterion(output, target)
+            self.fitness[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness).item()
         
     def get_loss(self):
