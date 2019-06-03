@@ -28,7 +28,8 @@ class DarwiNNEnvironment(object):
             #pin each local rank to a GPU round-robin
             print("Using GPUs")
             print("Pin local rank ",self.local_rank," to GPU ",self.local_rank%torch.cuda.device_count()," of ",torch.cuda.device_count())
-            self.device = torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
+            torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
+            self.device = torch.device('cuda:'+str(torch.cuda.current_device()))
         else:
             print("Using CPUs")
             self.device = torch.device('cpu')
@@ -76,7 +77,7 @@ class DarwiNNOptimizer(object):
     
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
-    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, population=100, device = torch.device('cpu')):
+    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, population=100):
         super(DarwiNNOptimizer, self).__init__()
         self.environment = environment
         self.optimizer = optimizer
@@ -84,9 +85,11 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.sampling = sampling
         self.model_adapt = model
         self.model = copy.deepcopy(model)
+        if self.environment.cuda:
+            self.model_adapt.cuda()
+            self.model.cuda()
         self.num_parameters = self.count_num_parameters()
         self.criterion = criterion
-        self.device = device
         self.population = (population // environment.number_nodes) * environment.number_nodes #round down requested population to something divisible by number of nodes
         self.sigma = sigma
         self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
@@ -118,7 +121,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         return len(orig_params_flat)
 
     def compute_centered_ranks(self,x):
-        centered = torch.zeros(len(x), dtype = torch.float, device = self.device)
+        centered = torch.zeros(len(x), dtype = torch.float, device = self.environment.device)
         sort, ind = x.sort()
         for i in range(len(x)):
             centered[ind[i].data] = i
@@ -148,7 +151,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.generation += 1
     
     def gen_noise(self):
-        return self.randfunc(self.num_parameters, device=self.device)*self.sigma
+        return self.randfunc(self.num_parameters, device=self.environment.device)*self.sigma
     
     def gen_epsilon(self, rank, fold_index):
         noise_id = self.generation*self.population + rank*self.folds + fold_index
@@ -175,8 +178,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         #for each in local population, mutate then evaluate, resulting in a list of fitnesses
         for i in range(self.folds):
             self.update_model(self.mutate(i))
-            if self.environment.cuda:
-                self.model.cuda()
             output = self.model(data)
             self.fitness[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness).item()
