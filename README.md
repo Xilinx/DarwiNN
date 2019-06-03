@@ -21,11 +21,15 @@ Example scripts are provided in `examples/`, which train various NNs for MNIST (
 
 To quickly run these examples:
 
-`docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[|mnist/cifar10].py --epochs 1 --lr 0.001 --no-cuda --population 5`
+```
+docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[mnist/cifar10].py --epochs 1 --lr 0.001 --no-cuda --population 5
+```
 
 For a detailed list of options available run:
 
-`docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[|mnist/cifar10].py --help`
+```
+docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[mnist/cifar10].py --help
+```
 
 # Profiling
 
