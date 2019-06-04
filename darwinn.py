@@ -79,6 +79,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
     def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, population=100):
         super(DarwiNNOptimizer, self).__init__()
+        #Disable Autograd
+        torch.autograd.set_grad_enabled(False)
         self.environment = environment
         self.optimizer = optimizer
         self.distribution = distribution
