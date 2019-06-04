@@ -153,14 +153,12 @@ if __name__ == "__main__":
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
     env = dwn.DarwiNNEnvironment(args.cuda)
-
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     train_dataset = datasets.CIFAR10('CIFAR10_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     test_dataset = datasets.CIFAR10('CIFAR10_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
     loss_criterion = nn.CrossEntropyLoss()
     
 	if args.topology == 'LeNet':
