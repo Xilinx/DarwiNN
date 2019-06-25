@@ -1,5 +1,5 @@
 # DarwiNN
-Distributed neuroevolution framework with really poor documentation.
+Distributed neuroevolution framework based on Pytorch.
 
 # Requirements
 
