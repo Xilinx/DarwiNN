@@ -12,27 +12,29 @@ import argparse
 class DarwiNNEnvironment(object):
     """Wrapper class for the environment setup API"""
     def __init__(self, cuda=True, seed=0):
-        #initialize world (optimizer agnostic)
-        #initialize MPI environment
-        self.number_nodes = int(os.environ['OMPI_COMM_WORLD_SIZE'])
-        self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
-        self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
-        print("Rank ",self.rank," (local: ",self.local_rank,") of ",self.number_nodes)
-        t_d.init_process_group(backend='mpi', rank=self.rank, world_size=self.number_nodes) ##set group
-        #configure local multiprocessing
-        mp.set_start_method('spawn', force = True)
         #configure GPU environment if needed
-        torch.manual_seed(seed)
         self.cuda = cuda
         if self.cuda:
             #pin each local rank to a GPU round-robin
             print("Using GPUs")
+            backend = "mpi"
             print("Pin local rank ",self.local_rank," to GPU ",self.local_rank%torch.cuda.device_count()," of ",torch.cuda.device_count())
             torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
             self.device = torch.device('cuda:'+str(torch.cuda.current_device()))
         else:
             print("Using CPUs")
+            backend = "mpi"
             self.device = torch.device('cpu')
+        #initialize world (optimizer agnostic)
+        #initialize Torch Distributed environment
+        self.number_nodes = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+        self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+        self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        print("Rank ",self.rank," (local: ",self.local_rank,") of ",self.number_nodes)
+        t_d.init_process_group(backend=backend, rank=self.rank, world_size=self.number_nodes) ##set group
+        #configure local multiprocessing
+        mp.set_start_method('spawn', force = True)
+        torch.manual_seed(seed)
         #TODO: auto-tune stuff could go in here
         #e.g. compute the maximum folding given the GPU/host memory, device, number of GPUs, and local ranks
         
@@ -49,8 +51,8 @@ class DarwiNNEnvironment(object):
     def scatter(self):
         raise NotImplementedError
     
-    def allgather(self):
-        raise NotImplementedError
+    def allgather(self, x, dst_list):
+        t_d.all_gather(tensor_list=dst_list, tensor=x)
     
     def allreduce(self):
         raise NotImplementedError
@@ -136,19 +138,16 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         epsilon = torch.zeros((self.population,self.num_parameters), device=self.environment.device)
         for i in range(self.population):
             epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
-        #gather fitness to node 0 to adapt theta
-        self.environment.gather(self.fitness,0,self.loss_adapt_list)
-        #update model on rank 0
-        if self.environment.rank == 0:
-            torch.cat(self.loss_adapt_list, out=self.loss_adapt)
-            self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
-            gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
-            self.update_grad(-gradient)
-            self.optimizer.step()
-            self.update_theta()
-        #broadcast
-        self.environment.broadcast(self.theta,0)
-        #update local model from (broadcast) theta
+        #all-gather fitness to dapt theta
+        self.environment.all_gather(self.loss_adapt_list,self.fitness)
+        torch.cat(self.loss_adapt_list, out=self.loss_adapt)
+        #update model
+        self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
+        gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
+        self.update_grad(-gradient)
+        self.optimizer.step()
+        self.update_theta()
+        #update local model from theta
         self.update_model(self.theta)
         self.generation += 1
     
