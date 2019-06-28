@@ -51,10 +51,10 @@ class DarwiNNEnvironment(object):
     def scatter(self):
         raise NotImplementedError
     
-    def allgather(self, x, dst_list):
+    def all_gather(self, x, dst_list):
         t_d.all_gather(tensor_list=dst_list, tensor=x)
     
-    def allreduce(self):
+    def all_reduce(self):
         raise NotImplementedError
 
 class DarwiNNOptimizer(object):
@@ -98,12 +98,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.sigma = sigma
         self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
         print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
-        if self.environment.rank == 0:
-            self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
-            self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
-        else:
-            self.loss_adapt_list = []
-            self.loss_adapt = None
+        self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
+        self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
         self.fitness = torch.zeros((self.folds,), device=self.environment.device)
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         self.update_theta()
@@ -139,7 +135,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         for i in range(self.population):
             epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
         #all-gather fitness to dapt theta
-        self.environment.all_gather(self.loss_adapt_list,self.fitness)
+        self.environment.all_gather(self.fitness,self.loss_adapt_list)
         torch.cat(self.loss_adapt_list, out=self.loss_adapt)
         #update model
         self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
