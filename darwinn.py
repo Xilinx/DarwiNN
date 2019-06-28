@@ -12,6 +12,11 @@ import argparse
 class DarwiNNEnvironment(object):
     """Wrapper class for the environment setup API"""
     def __init__(self, cuda=True, seed=0):
+        #initialize world (optimizer agnostic)
+        self.number_nodes = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+        self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+        self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        print("Rank ",self.rank," (local: ",self.local_rank,") of ",self.number_nodes)
         #configure GPU environment if needed
         self.cuda = cuda
         if self.cuda:
@@ -25,12 +30,7 @@ class DarwiNNEnvironment(object):
             print("Using CPUs")
             backend = "mpi"
             self.device = torch.device('cpu')
-        #initialize world (optimizer agnostic)
         #initialize Torch Distributed environment
-        self.number_nodes = int(os.environ['OMPI_COMM_WORLD_SIZE'])
-        self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
-        self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
-        print("Rank ",self.rank," (local: ",self.local_rank,") of ",self.number_nodes)
         t_d.init_process_group(backend=backend, rank=self.rank, world_size=self.number_nodes) ##set group
         #configure local multiprocessing
         mp.set_start_method('spawn', force = True)
