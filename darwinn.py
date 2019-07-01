@@ -121,14 +121,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.num_parameters = self.count_num_parameters()
         self.criterion = criterion
         self.sigma = sigma
-<<<<<<< HEAD
-=======
-        self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
-        print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
-        self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
-        self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
-        self.fitness = torch.zeros((self.folds,), device=self.environment.device)
->>>>>>> a296f8b3cfc3919e2b5099f9742a8fe7c9b64558
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         self.update_theta()
         if (self.distribution == "Gaussian"):
@@ -164,12 +156,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         epsilon = torch.zeros((self.population,self.num_parameters), device=self.environment.device)
         for i in range(self.population):
             epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
-<<<<<<< HEAD
-=======
-        #all-gather fitness to dapt theta
-        self.environment.all_gather(self.fitness,self.loss_adapt_list)
-        torch.cat(self.loss_adapt_list, out=self.loss_adapt)
->>>>>>> a296f8b3cfc3919e2b5099f9742a8fe7c9b64558
         #update model
         gradient = torch.mm(epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))
         self.update_grad(-gradient)
