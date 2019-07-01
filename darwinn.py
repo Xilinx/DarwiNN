@@ -79,7 +79,7 @@ class DarwiNNOptimizer(object):
     #performs selection and adaption according to results of a fitness evaluation
     def step(self):
         #all-gather fitness to dapt theta
-        self.environment.all_gather(self.fitness_list,self.fitness_local)
+        self.environment.all_gather(self.fitness_local,self.fitness_list)
         torch.cat(self.fitness_list, out=self.fitness_global)
         self.select()
         self.adapt()
@@ -230,7 +230,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
 
 class GenericBBOptimizer(DarwiNNOptimizer):
     """Implements a generic black-box optimizer where objective, mutation, and adaptation functions are defined externally"""
-    def __init__(self, environment, population=100, dimension=100, objective_fn, adapt_fn, mutate_fn):
+    def __init__(self, environment, population, dimension, objective_fn, adapt_fn, mutate_fn):
         super(OpenAIESOptimizer,self).__init__(environment, population)
         self.objective_fn = objective_fn
         self.adapt_fn = adapt_fn
