@@ -35,13 +35,13 @@ class DarwiNNEnvironment(object):
         #configure local multiprocessing
         mp.set_start_method('spawn', force = True)
         torch.manual_seed(seed)
-        #TODO: auto-tune stuff could go in here
+        #TODO: auto-tune
         #e.g. compute the maximum folding given the GPU/host memory, device, number of GPUs, and local ranks
+        #TODO: selectable gpu/cpu collectives
         
     def rank(self):
         return self.rank
     
-    #TODO: collective ops, implemented with pytorch distributed backend
     def broadcast(self, x, src):
         t_d.broadcast(x,src=src)
     
@@ -59,8 +59,37 @@ class DarwiNNEnvironment(object):
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
+    def __init__(self, environment, population=100):
+        #Disable Autograd
+        torch.autograd.set_grad_enabled(False)
+        #set environment and compute correct population and folds
+        self.environment = environment
+        #round down requested population to something divisible by number of ranks
+        self.population = (population // environment.number_nodes) * environment.number_nodes
+        #evenly divide population between ranks
+        self.folds = self.population // environment.number_nodes
+        print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
+        #define data structures to hold fitness values
+        self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
+        self.fitness_global = torch.zeros((self.population,), device=self.environment.device)
+        self.fitness_local = torch.zeros((self.folds,), device=self.environment.device)
+        #initialize genration
+        self.generation = 1
     
-    #adapts a model according to results of a fitness evaluation
+    #performs selection and adaption according to results of a fitness evaluation
+    def step(self):
+        #all-gather fitness to dapt theta
+        self.environment.all_gather(self.fitness_list,self.fitness_local)
+        torch.cat(self.fitness_list, out=self.fitness_global)
+        self.select()
+        self.adapt()
+        self.generation += 1
+    
+    #select by fitness and prepare for next generation
+    def select(self):
+        raise NotImplementedError
+    
+    #select by fitness and prepare for next generation
     def adapt(self):
         raise NotImplementedError
     
@@ -80,10 +109,7 @@ class DarwiNNOptimizer(object):
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
     def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, population=100):
-        super(DarwiNNOptimizer, self).__init__()
-        #Disable Autograd
-        torch.autograd.set_grad_enabled(False)
-        self.environment = environment
+        super(OpenAIESOptimizer,self).__init__(environment, population)
         self.optimizer = optimizer
         self.distribution = distribution
         self.sampling = sampling
@@ -94,17 +120,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.model.cuda()
         self.num_parameters = self.count_num_parameters()
         self.criterion = criterion
-        self.population = (population // environment.number_nodes) * environment.number_nodes #round down requested population to something divisible by number of nodes
         self.sigma = sigma
-        self.folds = self.population // environment.number_nodes # local population size TODO: in case of Antitethic check if local popsize divisible by 2
-        print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
-        if self.environment.rank == 0:
-            self.loss_adapt_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
-            self.loss_adapt = torch.zeros((self.population,), device=self.environment.device)
-        else:
-            self.loss_adapt_list = []
-            self.loss_adapt = None
-        self.fitness = torch.zeros((self.folds,), device=self.environment.device)
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         self.update_theta()
         if (self.distribution == "Gaussian"):
@@ -114,7 +130,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         else:
             raise ValueError
         self.loss = 0
-        self.generation = 1
 
     def count_num_parameters(self):
         orig_params = []
@@ -133,23 +148,21 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         centered = centered - 0.5
         return centered
 
+    def select(self):
+        self.fitness_global = self.compute_centered_ranks(-self.fitness_global)
+
     def adapt(self):
         #regenerate noise
         epsilon = torch.zeros((self.population,self.num_parameters), device=self.environment.device)
         for i in range(self.population):
             epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
-        #all-gather fitness to dapt theta
-        self.environment.all_gather(self.loss_adapt_list,self.fitness)
-        torch.cat(self.loss_adapt_list, out=self.loss_adapt)
         #update model
-        self.loss_adapt = self.compute_centered_ranks(-self.loss_adapt)
-        gradient = torch.mm(epsilon.t(), self.loss_adapt.view(len(self.loss_adapt), 1))
+        gradient = torch.mm(epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))
         self.update_grad(-gradient)
         self.optimizer.step()
         self.update_theta()
         #update local model from theta
         self.update_model(self.theta)
-        self.generation += 1
     
     def gen_noise(self):
         return self.randfunc(self.num_parameters, device=self.environment.device)*self.sigma
@@ -180,8 +193,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         for i in range(self.folds):
             self.update_model(self.mutate(i))
             output = self.model(data)
-            self.fitness[i] = self.criterion(output, target).item()
-        self.loss = torch.mean(self.fitness).item()
+            self.fitness_local[i] = self.criterion(output, target).item()
+        self.loss = torch.mean(self.fitness_local).item()
         
     def get_loss(self):
         return self.loss
@@ -213,3 +226,26 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             flattened_dim = param.numel()
             self.theta[idx:idx+flattened_dim] = param.data.flatten()
             idx += flattened_dim
+
+
+class GenericBBOptimizer(DarwiNNOptimizer):
+    """Implements a generic black-box optimizer where objective, mutation, and adaptation functions are defined externally"""
+    def __init__(self, environment, population=100, dimension=100, objective_fn, adapt_fn, mutate_fn):
+        super(OpenAIESOptimizer,self).__init__(environment, population)
+        self.objective_fn = objective_fn
+        self.adapt_fn = adapt_fn
+        self.mutate_fn = mutate_fn
+        self.theta = torch.zeros((dimension), device=self.environment.device)
+
+    def selct(self):
+        pass
+
+    def adapt(self):
+        self.theta = adapt_fn(self.fitness_global, self.theta)
+        
+    def eval_fitness(self):
+        #for each in local population, mutate then evaluate, resulting in a list of fitnesses
+        for i in range(self.folds):
+            theta_mutated = self.mutate_fn(self.theta)
+            self.fitness_local[i] = self.objective_fn(theta_mutated)
+        
