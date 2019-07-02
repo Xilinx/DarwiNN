@@ -17,18 +17,21 @@ class DarwiNNEnvironment(object):
         self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
         self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
         print("Rank ",self.rank," (local: ",self.local_rank,") of ",self.number_nodes)
+        #set environment variables for Gloo/NCCL
+        os.environ['WORLD_SIZE'] = str(self.number_nodes)
+        os.environ['RANK'] = str(self.rank) 
         #configure GPU environment if needed
         self.cuda = cuda
         if self.cuda:
             #pin each local rank to a GPU round-robin
             print("Using GPUs")
-            backend = "mpi"
+            backend = "nccl"
             print("Pin local rank ",self.local_rank," to GPU ",self.local_rank%torch.cuda.device_count()," of ",torch.cuda.device_count())
             torch.cuda.set_device(self.local_rank % torch.cuda.device_count())
             self.device = torch.device('cuda:'+str(torch.cuda.current_device()))
         else:
             print("Using CPUs")
-            backend = "mpi"
+            backend = "gloo"
             self.device = torch.device('cpu')
         #initialize Torch Distributed environment
         t_d.init_process_group(backend=backend, rank=self.rank, world_size=self.number_nodes) ##set group
