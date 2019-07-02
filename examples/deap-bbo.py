@@ -19,8 +19,9 @@ if __name__ == "__main__":
                         help='random seed (default: 42)')
     parser.add_argument('--generations', type=int, default=100, metavar='N',
                         help='how many generations to run')
+    parser.add_argument('--popsize', type=int, default=1000, metavar='N',
+                        help='population size (default: 1000)')
     args = parser.parse_args()
-    args.popsize = 100*args.dimension
     np.random.seed(args.seed)
 
     env = dwn.DarwiNNEnvironment(cuda=False,seed=args.seed)
