@@ -20,8 +20,11 @@ if __name__ == "__main__":
     parser.add_argument('--generations', type=int, default=100, metavar='N',
                         help='how many generations to run')
     args = parser.parse_args()
-
+    args.popsize = 100*args.dimension
     np.random.seed(args.seed)
+
+    env = dwn.DarwiNNEnvironment(cuda=False,seed=args.seed)
+    args.popsize = (args.popsize // env.number_nodes) * env.number_nodes
 
     #define individual with its fitness interpretation function
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
@@ -32,7 +35,7 @@ if __name__ == "__main__":
     toolbox.register("evaluate", benchmarks.rastrigin)
 
     #define update function
-    strategy = cma.Strategy(centroid=[5.0]*args.dimension, sigma=5.0, lambda_=20*args.dimension)
+    strategy = cma.Strategy(centroid=[5.0]*args.dimension, sigma=5.0, lambda_=args.popsize)
     toolbox.register("generate", strategy.generate, creator.Individual)
     toolbox.register("update", strategy.update)
 
@@ -47,8 +50,8 @@ if __name__ == "__main__":
     stats.register("min", np.min)
     stats.register("max", np.max)
 
-    env = dwn.DarwiNNEnvironment(cuda=False,seed=args.seed)
-    ne_optimizer = DEAPeaGenerateUpdateOptimizer(env, 20*args.dimension, args.dimension, obj_fn, update_fn, generate_fn, hof, stats)
+
+    ne_optimizer = DEAPeaGenerateUpdateOptimizer(env, args.popsize, args.dimension, obj_fn, update_fn, generate_fn, hof, stats)
 
     for generation in range(1, args.generations + 1):
         ne_optimizer.step()

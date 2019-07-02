@@ -78,7 +78,7 @@ if __name__ == "__main__":
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--population', type=int, default=100, metavar='N',
+    parser.add_argument('--popsize', type=int, default=100, metavar='N',
                         help='population size (default: 100)')
     parser.add_argument('--noise-dist', type=str, default="Gaussian",
                         help='noise distribution (default: Gaussian)')
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     #TODO: check Adam config
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     #wrap optimizer into a OpenAI-ES optimizer
-    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, population=args.population, distribution=args.noise_dist, sampling=args.sampling)
+    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling)
     
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)

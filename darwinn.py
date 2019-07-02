@@ -59,19 +59,19 @@ class DarwiNNEnvironment(object):
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
-    def __init__(self, environment, population=100):
+    def __init__(self, environment, popsize=100):
         #Disable Autograd
         torch.autograd.set_grad_enabled(False)
         #set environment and compute correct population and folds
         self.environment = environment
         #round down requested population to something divisible by number of ranks
-        self.population = (population // environment.number_nodes) * environment.number_nodes
+        self.popsize = (popsize // environment.number_nodes) * environment.number_nodes
         #evenly divide population between ranks
-        self.folds = self.population // environment.number_nodes
-        print("NE Optimizer parameters: population=",self.population,", folds=",self.folds)
+        self.folds = self.popsize // environment.number_nodes
+        print("NE Optimizer parameters: population=",self.popsize,", folds=",self.folds)
         #define data structures to hold fitness values
         self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
-        self.fitness_global = torch.zeros((self.population,), device=self.environment.device)
+        self.fitness_global = torch.zeros((self.popsize,), device=self.environment.device)
         self.fitness_local = torch.zeros((self.folds,), device=self.environment.device)
         #initialize genration
         self.generation = 1
@@ -108,8 +108,8 @@ class DarwiNNOptimizer(object):
     
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
-    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, population=100):
-        super(OpenAIESOptimizer,self).__init__(environment, population)
+    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100):
+        super(OpenAIESOptimizer,self).__init__(environment, popsize)
         self.optimizer = optimizer
         self.distribution = distribution
         self.sampling = sampling
@@ -153,8 +153,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
 
     def adapt(self):
         #regenerate noise
-        epsilon = torch.zeros((self.population,self.num_parameters), device=self.environment.device)
-        for i in range(self.population):
+        epsilon = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
+        for i in range(self.popsize):
             epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
         #update model
         gradient = torch.mm(epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))
@@ -168,7 +168,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         return self.randfunc(self.num_parameters, device=self.environment.device)*self.sigma
     
     def gen_epsilon(self, rank, fold_index):
-        noise_id = self.generation*self.population + rank*self.folds + fold_index
+        noise_id = self.generation*self.popsize + rank*self.folds + fold_index
         torch.manual_seed(noise_id)
         if (self.sampling == "Antithetic") and (fold_index >= int(self.folds/2)):
             noise_id = noise_id - int(self.folds/2)
