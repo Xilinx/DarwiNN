@@ -104,3 +104,6 @@ RUN wget https://www.cs.uoregon.edu/research/tau/tau_releases/tau-2.28.1.tar.gz 
 # Export TAU paths
 ENV PATH="/usr/local/x86_64/bin:${PATH}"
 ENV PYTHONPATH="/usr/local/x86_64/lib/bindings-mpi-python:${PYTHONPATH}"
+
+# Install DEAP for the BBO compatibility optimizer
+RUN pip install deap

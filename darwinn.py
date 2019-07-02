@@ -226,26 +226,3 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             flattened_dim = param.numel()
             self.theta[idx:idx+flattened_dim] = param.data.flatten()
             idx += flattened_dim
-
-
-class GenericBBOptimizer(DarwiNNOptimizer):
-    """Implements a generic black-box optimizer where objective, mutation, and adaptation functions are defined externally"""
-    def __init__(self, environment, population, dimension, objective_fn, adapt_fn, mutate_fn):
-        super(OpenAIESOptimizer,self).__init__(environment, population)
-        self.objective_fn = objective_fn
-        self.adapt_fn = adapt_fn
-        self.mutate_fn = mutate_fn
-        self.theta = torch.zeros((dimension), device=self.environment.device)
-
-    def selct(self):
-        pass
-
-    def adapt(self):
-        self.theta = adapt_fn(self.fitness_global, self.theta)
-        
-    def eval_fitness(self):
-        #for each in local population, mutate then evaluate, resulting in a list of fitnesses
-        for i in range(self.folds):
-            theta_mutated = self.mutate_fn(self.theta)
-            self.fitness_local[i] = self.objective_fn(theta_mutated)
-        
