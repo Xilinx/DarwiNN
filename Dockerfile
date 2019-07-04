@@ -23,7 +23,7 @@ RUN apt-get -y update && apt-get -y install --allow-downgrades  --allow-change-h
     software-properties-common 
 
 # Install Open MPI
-RUN apt-get install -y openmpi-bin
+RUN apt-get install -y openmpi-bin libopenmpi-dev
 
 # Set default NCCL parameters
 RUN echo NCCL_DEBUG=INFO >> /etc/nccl.conf && \
@@ -64,8 +64,6 @@ RUN wget https://www.cs.uoregon.edu/research/tau/pdt_releases/pdtoolkit-3.25.1.t
     cd pdtoolkit-3.25.1/ && ./configure -prefix=/usr/local && make clean install && \
     cd ../ && rm -rf pdtoolkit*
 
-RUN apt-get install -y libopenmpi-dev
-
 # Install TAU
 RUN wget https://www.cs.uoregon.edu/research/tau/tau_releases/tau-2.28.1.tar.gz && \ 
     tar -xf tau-2.28.1.tar.gz && \
@@ -81,4 +79,4 @@ ENV PATH="/usr/local/x86_64/bin:${PATH}"
 ENV PYTHONPATH="/usr/local/x86_64/lib/bindings-mpi-python:${PYTHONPATH}"
 
 # Install DEAP for the BBO compatibility optimizer
-RUN pip install deap
+RUN pip install deap scoop
