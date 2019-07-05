@@ -57,33 +57,46 @@ class DarwiNNEnvironment(object):
     def all_gather(self, x, dst_list):
         t_d.all_gather(tensor_list=dst_list, tensor=x)
     
-    def all_reduce(self):
-        raise NotImplementedError
+    def all_reduce(self, x):
+        t_d.all_reduce(x, op=t_d.reduce_op.SUM)
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
-    def __init__(self, environment, popsize=100):
+    def __init__(self, environment, popsize=100, data_parallel=False):
         #Disable Autograd
         torch.autograd.set_grad_enabled(False)
-        #set environment and compute correct population and folds
+        #set environment
         self.environment = environment
+        #set number of population-parallel working nodes
+        self.data_parallel = data_parallel
+        if self.data_parallel:
+            self.nodes = 1
+        else:
+            self.nodes = self.environment.number_nodes
         #round down requested population to something divisible by number of ranks
-        self.popsize = (popsize // environment.number_nodes) * environment.number_nodes
+        self.popsize = (popsize // self.nodes) * self.nodes
         #evenly divide population between ranks
-        self.folds = self.popsize // environment.number_nodes
+        self.folds = self.popsize // self.nodes
         print("NE Optimizer parameters: population=",self.popsize,", folds=",self.folds)
         #define data structures to hold fitness values
-        self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
+        self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.nodes)]
         self.fitness_global = torch.zeros((self.popsize,), device=self.environment.device)
         self.fitness_local = torch.zeros((self.folds,), device=self.environment.device)
-        #initialize genration
+        #initialize generation
         self.generation = 1
     
     #performs selection and adaption according to results of a fitness evaluation
     def step(self):
-        #all-gather fitness to dapt theta
-        self.environment.all_gather(self.fitness_local,self.fitness_list)
-        torch.cat(self.fitness_list, out=self.fitness_global)
+        if self.data_parallel:
+            for i in range(self.folds):
+                #all-reduce all of the local fitnesses
+                self.environment.all_reduce(self.fitness_local[i])
+            #copy local fitness into global fitness 
+            self.fitness_global = self.fitness_local
+        else:
+            #all-gather fitness to dapt theta
+            self.environment.all_gather(self.fitness_local,self.fitness_list)
+            torch.cat(self.fitness_list, out=self.fitness_global)
         self.select()
         self.adapt()
         self.generation += 1
@@ -111,8 +124,8 @@ class DarwiNNOptimizer(object):
     
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
-    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100):
-        super(OpenAIESOptimizer,self).__init__(environment, popsize)
+    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100, data_parallel=False):
+        super(OpenAIESOptimizer,self).__init__(environment, popsize, data_parallel)
         self.optimizer = optimizer
         self.distribution = distribution
         self.sampling = sampling
