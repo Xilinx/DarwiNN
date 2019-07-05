@@ -94,9 +94,12 @@ class DarwiNNOptimizer(object):
             #average local fitness sum to obtain global fitness 
             self.fitness_global = self.fitness_local / self.environment.number_nodes
         else:
-            #all-gather fitness to dapt theta
-            self.environment.all_gather(self.fitness_local,self.fitness_list)
-            torch.cat(self.fitness_list, out=self.fitness_global)
+            if self.environment.number_nodes > 1:
+                #all-gather fitness to dapt theta
+                self.environment.all_gather(self.fitness_local,self.fitness_list)
+                torch.cat(self.fitness_list, out=self.fitness_global)
+            else: #work-around for bug in Gloo for np=1
+                self.fitness_global = self.fitness_local
         self.select()
         self.adapt()
         self.generation += 1
