@@ -91,8 +91,8 @@ class DarwiNNOptimizer(object):
             for i in range(self.folds):
                 #all-reduce all of the local fitnesses
                 self.environment.all_reduce(self.fitness_local[i])
-            #copy local fitness into global fitness 
-            self.fitness_global = self.fitness_local
+            #average local fitness sum to obtain global fitness 
+            self.fitness_global = self.fitness_local / self.environment.number_nodes
         else:
             #all-gather fitness to dapt theta
             self.environment.all_gather(self.fitness_local,self.fitness_list)
