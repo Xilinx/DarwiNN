@@ -23,7 +23,7 @@ RUN apt-get -y update && apt-get -y install --allow-downgrades  --allow-change-h
     software-properties-common 
 
 # Install Open MPI
-RUN apt-get install -y openmpi-bin libopenmpi-dev
+RUN apt-get -y update && apt-get install -y openmpi-bin libopenmpi-dev
 
 # Set default NCCL parameters
 RUN echo NCCL_DEBUG=INFO >> /etc/nccl.conf && \
