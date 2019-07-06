@@ -22,17 +22,8 @@ RUN apt-get -y update && apt-get -y install --allow-downgrades  --allow-change-h
     build-essential \
     software-properties-common 
 
-# Install Open MPI with CUDA support
-RUN mkdir /tmp/openmpi && \
-    cd /tmp/openmpi && \
-    wget https://www.open-mpi.org/software/ompi/v4.0/downloads/openmpi-4.0.0.tar.gz && \
-    tar zxf openmpi-4.0.0.tar.gz && \
-    cd openmpi-4.0.0 && \
-    ./configure --enable-orterun-prefix-by-default --with-cuda FC=gfortran && \
-    make -j $(nproc) all && \
-    make install && \
-    ldconfig && \
-    rm -rf /tmp/openmpi
+# Install Open MPI
+RUN apt-get -y update && apt-get install -y openmpi-bin libopenmpi-dev
 
 # Set default NCCL parameters
 RUN echo NCCL_DEBUG=INFO >> /etc/nccl.conf && \
@@ -64,26 +55,8 @@ ENV PATH /opt/conda/bin:$PATH
 RUN conda install numpy pyyaml scipy ipython mkl mkl-include cython typing && \
     conda clean -ya
 
-RUN conda install -y -c pytorch magma-cuda100 && \
+RUN conda install -y -c pytorch pytorch=${PYTORCH_VERSION} torchvision && \
     conda clean -ya 
-
-# Install pip-level dependencies for Pytorch (taken from Pytorch requirements.txt)
-RUN pip install ninja future six setuptools Pillow
-
-# Build and install Pytorch from source for MPI support
-RUN git clone --recursive https://github.com/pytorch/pytorch.git && \
-    cd pytorch && \
-    git checkout v${PYTORCH_VERSION} && \
-    TORCH_CUDA_ARCH_LIST="6.0+PTX" TORCH_NVCC_FLAGS="-Xfatbin -compress-all" \
-    CMAKE_PREFIX_PATH="$(dirname $(which conda))/../" \
-    USE_MPI=1 python setup.py install && \
-    cd ../ && \
-    rm -rf pytorch
-
-# Install standard torchvision 
-RUN git clone https://github.com/pytorch/vision && \
-    cd vision && \
-    python setup.py install 
 
 # Install PDT, for TAU
 #get and install PDT
@@ -104,3 +77,6 @@ RUN wget https://www.cs.uoregon.edu/research/tau/tau_releases/tau-2.28.1.tar.gz 
 # Export TAU paths
 ENV PATH="/usr/local/x86_64/bin:${PATH}"
 ENV PYTHONPATH="/usr/local/x86_64/lib/bindings-mpi-python:${PYTHONPATH}"
+
+# Install DEAP for the BBO compatibility optimizer
+RUN pip install deap scoop

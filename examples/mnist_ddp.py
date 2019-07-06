@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
+from torch.utils.data.distributed import DistributedSampler
 import darwinn as dwn
 import argparse
 
@@ -34,7 +35,7 @@ def train(epoch, train_loader, ne_optimizer, args):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         ne_optimizer.eval_fitness(data, target)
-        ne_optimizer.step()#no backward pass, adapt instead of step
+        ne_optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 
@@ -95,17 +96,17 @@ if __name__ == "__main__":
 
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
     train_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    train_ddp_sampler = DistributedSampler(train_dataset)
+    train_loader = torch.utils.data.DataLoader(train_dataset, sampler=train_ddp_sampler, batch_size=args.batch_size, **kwargs)
     test_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     loss_criterion = F.nll_loss
     
     
     model = Conv2()
-    #TODO: check Adam config
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     #wrap optimizer into a OpenAI-ES optimizer
-    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling)
+    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=True)
     
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)
