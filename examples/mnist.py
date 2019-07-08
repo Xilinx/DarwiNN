@@ -6,6 +6,7 @@ from torchvision import datasets, transforms
 from torch.autograd import Variable
 import darwinn as dwn
 import argparse
+from torch.utils.data.distributed import DistributedSampler
 
 class Conv2(nn.Module):
   def __init__(self):
@@ -74,6 +75,10 @@ if __name__ == "__main__":
                         help='SGD momentum (default: 0.5)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
+    parser.add_argument('--no-test', action='store_true', default=False,
+                        help='disables testing')
+    parser.add_argument('--ddp', action='store_true', default=False,
+                        help='performs Distributed Data-Parallel evolution')
     parser.add_argument('--seed', type=int, default=42, metavar='S',
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
@@ -95,20 +100,25 @@ if __name__ == "__main__":
 
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
     train_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    
+    if args.ddp:
+        train_ddp_sampler = DistributedSampler(train_dataset)
+        train_loader = torch.utils.data.DataLoader(train_dataset, sampler=train_ddp_sampler, batch_size=args.batch_size, **kwargs)
+    else:
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    
     test_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     loss_criterion = F.nll_loss
     
     
     model = Conv2()
-    #TODO: check Adam config
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     #wrap optimizer into a OpenAI-ES optimizer
-    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling)
+    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
     
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)
-        if env.rank == 0:
+        if env.rank == 0 and not args.no_test:
             test(test_loader, ne_optimizer, args)
 
