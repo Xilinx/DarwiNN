@@ -142,6 +142,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.sigma = sigma
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         self.update_theta()
+        self.epsilon = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
+        self.fold_offset = self.environment.rank*self.folds
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):
@@ -171,35 +173,24 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.fitness_global = self.compute_centered_ranks(-self.fitness_global)
 
     def adapt(self):
-        #regenerate noise
-        epsilon = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
-        for i in range(self.popsize):
-            epsilon[i] = self.gen_epsilon(i//self.folds,i%self.folds)
-        #update model
-        gradient = torch.mm(epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))
+        gradient = torch.mm(self.epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))
         self.update_grad(-gradient)
         self.optimizer.step()
         self.update_theta()
         #update local model from theta
         self.update_model(self.theta)
     
-    def gen_noise(self):
-        return self.randfunc(self.num_parameters, device=self.environment.device)*self.sigma
-    
-    def gen_epsilon(self, rank, fold_index):
-        noise_id = self.generation*self.popsize + rank*self.folds + fold_index
-        torch.manual_seed(noise_id)
-        if (self.sampling == "Antithetic") and (fold_index >= int(self.folds/2)):
-            noise_id = noise_id - int(self.folds/2)
-            torch.manual_seed(noise_id)
-            epsilon = -self.gen_noise()
+    def gen_epsilon(self):
+        torch.manual_seed(self.generation)
+        if (self.sampling == "Antithetic"):
+            half_epsilon = self.randfunc((self.popsize//2,self.num_parameters), device=self.environment.device)*self.sigma
+            opposite_epsilon = half_epsilon*-1.0
+            self.epsilon = torch.cat((half_epsilon,opposite_epsilon),0)
         else:
-            epsilon = self.gen_noise()
-        return epsilon
+            self.epsilon = self.randfunc((self.popsize,self.num_parameters), device=self.environment.device)*self.sigma
 
     def mutate(self, fold_index):
-        epsilon = self.gen_epsilon(self.environment.rank, fold_index)
-        theta_noisy = self.theta + epsilon
+        theta_noisy = self.theta + self.epsilon[fold_index+self.fold_offset]
         return theta_noisy
     
     def eval_theta(self, data, target):
@@ -208,7 +199,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         return output
     
     def eval_fitness(self, data, target):
-        #for each in local population, mutate then evaluate, resulting in a list of fitnesses
+        self.gen_epsilon()
         for i in range(self.folds):
             self.update_model(self.mutate(i))
             output = self.model(data)

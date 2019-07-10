@@ -36,7 +36,7 @@ def train(epoch, train_loader, ne_optimizer, args):
             data, target = data.cuda(), target.cuda()
         ne_optimizer.eval_fitness(data, target)
         ne_optimizer.step()#no backward pass, adapt instead of step
-        if batch_idx % args.log_interval == 0:
+        if batch_idx % args.log_interval == 0 and args.verbose:
             print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 
 def test(test_loader, ne_optimizer, args):
@@ -91,6 +91,8 @@ if __name__ == "__main__":
                         help='noise variance (default: 0.01)')
     parser.add_argument('--sampling', type=str, default="Antithetic",
                         help='sampling strategy (default: Antithetic)')
+    parser.add_argument('--verbose', action='store_true', default=False,
+                        help='enables printing loss during training')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
