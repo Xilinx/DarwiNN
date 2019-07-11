@@ -93,6 +93,8 @@ if __name__ == "__main__":
                         help='sampling strategy (default: Antithetic)')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='enables printing loss during training')
+    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
+                        help='choose which neuroevolution optimizer to use')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -115,9 +117,13 @@ if __name__ == "__main__":
     
     
     model = Conv2()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    #wrap optimizer into a OpenAI-ES optimizer
-    ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
+
+    if args.ne_opt == 'OpenAI-ES':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        #wrap optimizer into a OpenAI-ES optimizer
+        ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
+    else:
+        ne_optimizer = dwn.GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
     
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)

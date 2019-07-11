@@ -277,8 +277,8 @@ class GAOptimizer(DarwiNNOptimizer):
 
     def eval_fitness(self, data, target):
         self.mutate()
-        for i in range(self.fold_offset,self.fold_offset+self.folds):
-            self.update_model(self.population[i])
+        for i in range(self.folds):
+            self.update_model(self.population[self.fold_offset+i])
             output = self.model(data)
             self.fitness_local[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness_local).item()
