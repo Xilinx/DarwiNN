@@ -124,6 +124,34 @@ class DarwiNNOptimizer(object):
     
     def get_loss(self):
         raise NotImplementedError
+        
+    """Updates the NN model from the value of Theta"""
+    def update_model(self, theta):
+        idx = 0
+        for param in self.model.parameters():
+            flattened_dim = param.numel()
+            temp = theta[idx:idx+flattened_dim]
+            temp = temp.view_as(param)
+            param.data = temp.data
+            idx += flattened_dim
+
+    """Updates the NN model gradients"""
+    def update_grad(self, grad):
+        idx = 0
+        for param in self.model_adapt.parameters():
+            flattened_dim = param.numel()
+            temp = grad[idx:idx+flattened_dim]
+            temp = temp.view_as(param.data)
+            param.grad = temp.data
+            idx += flattened_dim
+
+    """Updates Theta from the NN model"""
+    def update_theta(self):
+        idx = 0
+        for param in self.model_adapt.parameters():
+            flattened_dim = param.numel()
+            self.theta[idx:idx+flattened_dim] = param.data.flatten()
+            idx += flattened_dim
     
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
@@ -217,31 +245,43 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         
     def get_loss(self):
         return self.loss
+
+class GAOptimizer(DarwiNNOptimizer):
+    """Implements a simple Genetic Algorithm optimizer"""
+    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sigma=0.1, popsize=100, elite_ratio=0.1, mutation_probability=0.01, data_parallel=False):
+        super(GAOptimizer,self).__init__(environment, popsize, data_parallel)
+        self.num_elites = int(self.popsize*elite_ratio)
+        self.elites = torch.zeros((self.num_elites,self.num_parameters), device=self.environment.device)
+
+    def select(self):
+        #select new elites from general population and previous elites
+        #note that the entire population was (possibly) not generated on the local node
+        #determine which were the best, regenerate them from seeds and current elites, then update elites
+        #TODO
+        #sort by fitness
+        fitness_sorted, ind = self.fitness_global.sort()
+        #iterate over indices of fittest individuals, and regenerate or copy over from old elites to new elites 
+        for i in range(self.num_elites):
+            if ind[i] < self.num_elites:
+                #was part of elites before
+                new_elites[i] = self.elites[ind[i]]
+            else:
+                #regenerate individual from seed based on index and generation
+                seed = ind[i]+self.popsize*self.generation
+                torch.manual_seed(seed)
+                new_elites[i] = 
+        def sga_adapt(children, children_loss, elites, elite_loss, elite_population):
+        combined_loss = torch.cat((children_loss, elite_loss),0)
+
+    def mutate(self, fold_index):
+        parent_1 = self.elites[torch.randint(self.num_elites, (1,))]
+        parent_2 = self.elites[torch.randint(self.num_elites, (1,))]
+        child_minion[fold_index] = torch.clone(parent_1)
+        indices = torch.rand(num_parameters, device=device_id)
+        for index, mutate_prob in enumerate(indices):
+            if mutate_prob > 0.5:
+                child_minion[fold_index][index] = parent_2[1][index]
+        theta_noisy = child_minion[fold_index] + torch.randn((num_parameters,), device=device_id)*self.sigma
+        return theta_noisy
         
-    """Updates the NN model from the value of Theta"""
-    def update_model(self, theta):
-        idx = 0
-        for param in self.model.parameters():
-            flattened_dim = param.numel()
-            temp = theta[idx:idx+flattened_dim]
-            temp = temp.view_as(param)
-            param.data = temp.data
-            idx += flattened_dim
-
-    """Updates the NN model gradients"""
-    def update_grad(self, grad):
-        idx = 0
-        for param in self.model_adapt.parameters():
-            flattened_dim = param.numel()
-            temp = grad[idx:idx+flattened_dim]
-            temp = temp.view_as(param.data)
-            param.grad = temp.data
-            idx += flattened_dim
-
-    """Updates Theta from the NN model"""
-    def update_theta(self):
-        idx = 0
-        for param in self.model_adapt.parameters():
-            flattened_dim = param.numel()
-            self.theta[idx:idx+flattened_dim] = param.data.flatten()
-            idx += flattened_dim
+    
