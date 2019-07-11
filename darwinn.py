@@ -143,7 +143,10 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
         self.update_theta()
         self.epsilon = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
-        self.fold_offset = self.environment.rank*self.folds
+        if not data_parallel:
+            self.fold_offset = self.environment.rank*self.folds
+        else:
+            self.fold_offset = 0
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):
