@@ -62,7 +62,7 @@ class DarwiNNEnvironment(object):
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
-    def __init__(self, environment, popsize=100, data_parallel=False):
+    def __init__(self, environment, model, criterion, popsize=100, data_parallel=False):
         #Disable Autograd
         torch.autograd.set_grad_enabled(False)
         #set environment
@@ -82,6 +82,17 @@ class DarwiNNOptimizer(object):
         self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.nodes)]
         self.fitness_global = torch.zeros((self.popsize,), device=self.environment.device)
         self.fitness_local = torch.zeros((self.folds,), device=self.environment.device)
+        #initialize model and theta
+        self.model_adapt = model
+        self.model = copy.deepcopy(model)
+        if self.environment.cuda:
+            self.model.cuda()
+            self.model_adapt.cuda()
+        self.num_parameters = self.count_num_parameters()
+        self.criterion = criterion
+        self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
+        self.update_theta()
+        self.loss = 0
         #initialize generation
         self.generation = 1
     
@@ -124,7 +135,15 @@ class DarwiNNOptimizer(object):
     
     def get_loss(self):
         raise NotImplementedError
-        
+
+    def count_num_parameters(self):
+        orig_params = []
+        for param in self.model.parameters():
+            p = param.data.cpu().numpy()
+            orig_params.append(p.flatten())
+        orig_params_flat = np.concatenate(orig_params)
+        return len(orig_params_flat)
+
     """Updates the NN model from the value of Theta"""
     def update_model(self, theta):
         idx = 0
@@ -152,24 +171,23 @@ class DarwiNNOptimizer(object):
             flattened_dim = param.numel()
             self.theta[idx:idx+flattened_dim] = param.data.flatten()
             idx += flattened_dim
+            
+    def eval_theta(self, data, target):
+        output = self.model_adapt(data)
+        self.loss = self.criterion(output, target).item()
+        return output
+        
+    def get_loss(self):
+        return self.loss
     
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
     def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100, data_parallel=False):
-        super(OpenAIESOptimizer,self).__init__(environment, popsize, data_parallel)
+        super(OpenAIESOptimizer,self).__init__(environment, model, criterion, popsize, data_parallel)
         self.optimizer = optimizer
         self.distribution = distribution
         self.sampling = sampling
-        self.model_adapt = model
-        self.model = copy.deepcopy(model)
-        if self.environment.cuda:
-            self.model_adapt.cuda()
-            self.model.cuda()
-        self.num_parameters = self.count_num_parameters()
-        self.criterion = criterion
         self.sigma = sigma
-        self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
-        self.update_theta()
         self.epsilon = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
         self.fold_offset = self.environment.rank*self.folds
         if (self.distribution == "Gaussian"):
@@ -178,15 +196,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.randfunc = torch.rand
         else:
             raise ValueError
-        self.loss = 0
-
-    def count_num_parameters(self):
-        orig_params = []
-        for param in self.model.parameters():
-            p = param.data.cpu().numpy()
-            orig_params.append(p.flatten())
-        orig_params_flat = np.concatenate(orig_params)
-        return len(orig_params_flat)
 
     def compute_centered_ranks(self,x):
         centered = torch.zeros(len(x), dtype = torch.float, device = self.environment.device)
@@ -221,11 +230,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         theta_noisy = self.theta + self.epsilon[fold_index+self.fold_offset]
         return theta_noisy
     
-    def eval_theta(self, data, target):
-        output = self.model_adapt(data)
-        self.loss = self.criterion(output, target).item()
-        return output
-    
     def eval_fitness(self, data, target):
         self.gen_epsilon()
         for i in range(self.folds):
@@ -233,46 +237,49 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             output = self.model(data)
             self.fitness_local[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness_local).item()
-        
-    def get_loss(self):
-        return self.loss
 
 class GAOptimizer(DarwiNNOptimizer):
     """Implements a simple Genetic Algorithm optimizer"""
-    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sigma=0.1, popsize=100, elite_ratio=0.1, mutation_probability=0.01, data_parallel=False):
-        super(GAOptimizer,self).__init__(environment, popsize, data_parallel)
+    def __init__(self, environment, model, criterion, sigma=0.1, popsize=100, elite_ratio=0.1, mutation_probability=0.01, data_parallel=False):
+        super(GAOptimizer,self).__init__(environment, model, criterion, popsize, data_parallel)
+        self.fold_offset = self.environment.rank*self.folds
         self.num_elites = int(self.popsize*elite_ratio)
         self.elites = torch.zeros((self.num_elites,self.num_parameters), device=self.environment.device)
+        self.population = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
+        self.sigma = sigma
 
     def select(self):
-        #select new elites from general population and previous elites
-        #note that the entire population was (possibly) not generated on the local node
-        #determine which were the best, regenerate them from seeds and current elites, then update elites
-        #TODO
         #sort by fitness
         fitness_sorted, ind = self.fitness_global.sort()
-        #iterate over indices of fittest individuals, and regenerate or copy over from old elites to new elites 
+        #select elites from population using indices of top fitnesses
+        self.elites = torch.index_select(self.population,0,ind[:self.num_elites])   
+                
+    def mutate(self):
+        #elites are inherited
         for i in range(self.num_elites):
-            if ind[i] < self.num_elites:
-                #was part of elites before
-                new_elites[i] = self.elites[ind[i]]
-            else:
-                #regenerate individual from seed based on index and generation
-                seed = ind[i]+self.popsize*self.generation
-                torch.manual_seed(seed)
-                new_elites[i] = 
-        def sga_adapt(children, children_loss, elites, elite_loss, elite_population):
-        combined_loss = torch.cat((children_loss, elite_loss),0)
+            self.population[i] = self.elites[i]
+        #rest of population is generated
+        for i in range(self.num_elites,self.popsize):
+            idx1 = torch.randint(0,self.num_elites,(1,),device=self.environment.device)
+            idx2 = torch.randint(0,self.num_elites,(1,),device=self.environment.device)
+            parent_1 = self.elites[idx1.item()]
+            parent_2 = self.elites[idx2.item()]
+            parent1_select = torch.randint(0,2,(self.num_parameters,), dtype=torch.float, device=self.environment.device)
+            parent2_select = (parent1_select - 1.0) * -1.0
+            #crossover
+            self.population[i] = self.elites[idx1.item()] * parent1_select
+            self.population[i] += parent_2 * parent2_select
+            #mutation
+            self.population[i] += torch.randn((self.num_parameters,), device=self.environment.device)*self.sigma
+            
+    def adapt(self):
+        pass
 
-    def mutate(self, fold_index):
-        parent_1 = self.elites[torch.randint(self.num_elites, (1,))]
-        parent_2 = self.elites[torch.randint(self.num_elites, (1,))]
-        child_minion[fold_index] = torch.clone(parent_1)
-        indices = torch.rand(num_parameters, device=device_id)
-        for index, mutate_prob in enumerate(indices):
-            if mutate_prob > 0.5:
-                child_minion[fold_index][index] = parent_2[1][index]
-        theta_noisy = child_minion[fold_index] + torch.randn((num_parameters,), device=device_id)*self.sigma
-        return theta_noisy
+    def eval_fitness(self, data, target):
+        self.mutate()
+        for i in range(self.fold_offset,self.fold_offset+self.folds):
+            self.update_model(self.population[i])
+            output = self.model(data)
+            self.fitness_local[i] = self.criterion(output, target).item()
+        self.loss = torch.mean(self.fitness_local).item()
         
-    
