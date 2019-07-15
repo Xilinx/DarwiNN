@@ -58,7 +58,7 @@ class DarwiNNEnvironment(object):
         t_d.all_gather(tensor_list=dst_list, tensor=x)
     
     def all_reduce(self, x):
-        t_d.all_reduce(x, op=t_d.reduce_op.SUM)
+        t_d.all_reduce(x, op=t_d.ReduceOp.SUM)
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
@@ -221,7 +221,6 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.update_model(self.theta)
     
     def gen_epsilon(self):
-        torch.manual_seed(self.generation)
         if (self.sampling == "Antithetic"):
             half_epsilon = self.randfunc((self.popsize//2,self.num_parameters), device=self.environment.device)*self.sigma
             opposite_epsilon = half_epsilon*-1.0
