@@ -4,7 +4,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
-import darwinn as dwn
+from darwinn.utils.environment import DarwiNNEnvironment
+from darwinn.optimizers.dnn import OpenAIESOptimizer
+from darwinn.optimizers.dnn import GAOptimizer
 import argparse
 from torch.utils.data.distributed import DistributedSampler
 
@@ -100,7 +102,7 @@ if __name__ == "__main__":
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-    env = dwn.DarwiNNEnvironment(args.cuda)
+    env = DarwiNNEnvironment(args.cuda)
 
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
     train_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
@@ -121,9 +123,9 @@ if __name__ == "__main__":
     if args.ne_opt == 'OpenAI-ES':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         #wrap optimizer into a OpenAI-ES optimizer
-        ne_optimizer = dwn.OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
+        ne_optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
     else:
-        ne_optimizer = dwn.GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
+        ne_optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
     
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)
