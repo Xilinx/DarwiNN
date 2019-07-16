@@ -6,14 +6,26 @@ Distributed neuroevolution framework based on Pytorch.
 ## Dependencies
 
 DarwiNN depends on:
+* Python (3.6+)
 * MPI
-* Pytorch distributed MPI backend
+* Pytorch (1.1.0+)
+* DEAP (for specific black box optimization uses)
 
-## Docker
+## Installation
 
-A Dockerfile is available under `images/Dockerfile`. To build an image run:
+### Pip
+DarwiNN is pip-installable with the following commands:
 
-`docker build -t darwinn:latest -f images/Dockerfile .`
+```
+python setup.py bdist_wheel
+pip install dist/*.whl
+```
+
+### Docker
+
+To build a Docker image for DarwiNN run:
+
+`docker build -t darwinn:latest .`
 
 # Examples
 
@@ -22,21 +34,11 @@ Example scripts are provided in `examples/`, which train various NNs for MNIST (
 To quickly run these examples:
 
 ```
-docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[mnist/cifar10].py --epochs 1 --lr 0.001 --no-cuda --population 5
+docker run -it --rm --ipc host -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[mnist/cifar10].py --epochs 1 --lr 0.001 --no-cuda --popsize 5
 ```
 
 For a detailed list of options available run:
 
 ```
-docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 python examples/[mnist/cifar10].py --help
-```
-
-# Profiling
-
-The Docker image built from the provided Dockerfile contains an installation of the [TAU](https://www.cs.uoregon.edu/research/tau/home.php) profiler.
-To profile any DarwiNN run with TAU, simply execute with `tau_python` instead of `python`:
-
-```
-docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest mpirun --allow-run-as-root -np 1 tau_python examples/mnist.py --epochs 1 --lr 0.001 --no-cuda --population 5
-docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest pprof
+docker run -it --rm -v `pwd`:/work --workdir /work darwinn:latest python examples/[mnist/cifar10].py --help
 ```
