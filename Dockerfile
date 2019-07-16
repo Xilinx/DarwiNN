@@ -58,25 +58,5 @@ RUN conda install numpy pyyaml scipy ipython mkl mkl-include cython typing && \
 RUN conda install -y -c pytorch pytorch=${PYTORCH_VERSION} torchvision && \
     conda clean -ya 
 
-# Install PDT, for TAU
-#get and install PDT
-RUN wget https://www.cs.uoregon.edu/research/tau/pdt_releases/pdtoolkit-3.25.1.tar.gz && tar -xf pdtoolkit-3.25.1.tar.gz && \
-    cd pdtoolkit-3.25.1/ && ./configure -prefix=/usr/local && make clean install && \
-    cd ../ && rm -rf pdtoolkit*
-
-# Install TAU
-RUN wget https://www.cs.uoregon.edu/research/tau/tau_releases/tau-2.28.1.tar.gz && \ 
-    tar -xf tau-2.28.1.tar.gz && \
-    PYTHON_INCLUDE_PATH=$(python -c "from sysconfig import get_paths as gp; print(gp()[\"include\"])"); \
-    PYTHON_LIB_PATH=/opt/conda/lib/python$PYTHON_VERSION; \
-    cd tau-2.28.1/ && \
-    ./configure -pdt=/usr/local -prefix=/usr/local -bfd=download -pythoninc=$PYTHON_INCLUDE_PATH -pythonlib=$PYTHON_LIB_PATH -mpi -opari -cuda=/usr/local/cuda-10.0 && \
-    make clean install && \
-    cd ../ && rm -rf tau*
-
-# Export TAU paths
-ENV PATH="/usr/local/x86_64/bin:${PATH}"
-ENV PYTHONPATH="/usr/local/x86_64/lib/bindings-mpi-python:${PYTHONPATH}"
-
 # Install DEAP for the BBO compatibility optimizer
 RUN pip install deap scoop
