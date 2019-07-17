@@ -8,13 +8,18 @@ import copy
 import numpy as np
 import math
 import argparse
-from darwinn import DarwiNNOptimizer
 from deap import tools
 
-class DEAPeaGenerateUpdateOptimizer(DarwiNNOptimizer):
+class DEAPeaGenerateUpdateOptimizer():
     """Implements a generic black-box optimizer where objective, mutation, and adaptation functions are defined externally"""
-    def __init__(self, environment, population, dimension, objective_fn, update_fn, generate_fn, halloffame=None, stats=None, verbose=True):
-        super(DEAPeaGenerateUpdateOptimizer,self).__init__(environment, population)
+    def __init__(self, environment, popsize, dimension, objective_fn, update_fn, generate_fn, halloffame=None, stats=None, verbose=True):
+        self.environment = environment
+        self.popsize = (popsize // self.environment.number_nodes) * self.environment.number_nodes
+        #evenly divide population between ranks
+        self.folds = self.popsize // self.environment.number_nodes
+        self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.environment.number_nodes)]
+        self.fitness_global = torch.zeros((self.popsize,), device=self.environment.device)
+        self.fitness_local = torch.zeros((self.folds,), device=self.environment.device)
         self.objective_fn = objective_fn
         self.generate_fn = generate_fn
         self.update_fn = update_fn
@@ -24,6 +29,7 @@ class DEAPeaGenerateUpdateOptimizer(DarwiNNOptimizer):
         self.logbook = tools.Logbook()
         self.logbook.header = ['gen', 'nevals'] + (self.stats.fields if stats else [])
         self.verbose = verbose
+        self.generation = 1
 
     def eval_fitness(self):
         #for each in local population, mutate then evaluate, resulting in a list of fitnesses
@@ -35,8 +41,11 @@ class DEAPeaGenerateUpdateOptimizer(DarwiNNOptimizer):
         # Evaluate the individuals
         self.eval_fitness()
         #all-gather fitness to dapt theta
-        self.environment.all_gather(self.fitness_local,self.fitness_list)
-        torch.cat(self.fitness_list, out=self.fitness_global)
+        if self.environment.number_nodes == 1:
+            self.fitness_global = self.fitness_local
+        else:
+            self.environment.all_gather(self.fitness_local,self.fitness_list)
+            torch.cat(self.fitness_list, out=self.fitness_global)
         #write fitness values into individuals
         for individual, fitness_value in zip(self.population, self.fitness_global):
             individual.fitness.values = (fitness_value.item(),)

@@ -5,9 +5,9 @@ from deap import tools
 from deap import benchmarks
 from deap import cma
 from deap import algorithms
-import darwinn as dwn
 import argparse
-from optimizers.deap import DEAPeaGenerateUpdateOptimizer
+from darwinn.optimizers.deap import DEAPeaGenerateUpdateOptimizer
+from darwinn.utils.environment import DarwiNNEnvironment
 
 if __name__ == "__main__":
     
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     np.random.seed(args.seed)
 
-    env = dwn.DarwiNNEnvironment(cuda=False,seed=args.seed)
+    env = DarwiNNEnvironment(cuda=False,seed=args.seed)
     args.popsize = (args.popsize // env.number_nodes) * env.number_nodes
 
     #define individual with its fitness interpretation function

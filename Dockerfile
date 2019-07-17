@@ -59,4 +59,11 @@ RUN conda install -y -c pytorch pytorch=${PYTORCH_VERSION} torchvision && \
     conda clean -ya 
 
 # Install DEAP for the BBO compatibility optimizer
-RUN pip install deap scoop
+RUN pip install deap scoop setuptools
+
+# Install DarwiNN
+COPY ./ /DarwiNN
+RUN cd /DarwiNN && python setup.py bdist_wheel && pip install dist/*.whl && rm -rf /DarwiNN
+
+# Save path in /etc/environment so it can be used when connecting through SSH
+RUN echo "PATH=$PATH" > /etc/environment
