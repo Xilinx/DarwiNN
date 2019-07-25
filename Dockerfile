@@ -42,10 +42,10 @@ ENV PYTORCH_VERSION=1.1.0
 ENV PYTHON_VERSION=3.6
 
 # Install Python 3.6 on top of Miniconda, all in a single pass
-RUN curl -o ~/miniconda.sh -O  https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
-     chmod +x ~/miniconda.sh && \
-     ~/miniconda.sh -b -p /opt/conda && \
-     rm ~/miniconda.sh && \
+RUN curl -o /tmp/miniconda.sh -O  https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
+     chmod +x /tmp/miniconda.sh && \
+     /tmp/miniconda.sh -b -p /opt/conda && \
+     rm /tmp/miniconda.sh && \
      /opt/conda/bin/conda install -y python=${PYTHON_VERSION} 
 
 # Add Conda exe to the PATH
