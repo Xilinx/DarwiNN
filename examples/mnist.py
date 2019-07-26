@@ -41,13 +41,13 @@ class MNIST_3M(nn.Module):
     self.num_padding = 2
     # input is 28x28
     # padding=2 for same padding
-    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding)
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding, bias=True)
     # feature map size is 14*14 by pooling
     # padding=2 for same padding
-    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding)
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding, bias=True)
     # feature map size is 7*7 by pooling
-    self.fc1 = nn.Linear(self.num_filter2*7*7, 1024)
-    self.fc2 = nn.Linear(1024, 10)
+    self.fc1 = nn.Linear(self.num_filter2*7*7, 1024, bias=True)
+    self.fc2 = nn.Linear(1024, 10, bias=True)
 
   def forward(self, x):
     x = F.max_pool2d(F.relu(self.conv1(x)), 2)
@@ -123,6 +123,8 @@ if __name__ == "__main__":
                         help='enables printing loss during training')
     parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
                         help='choose which neuroevolution optimizer to use')
+    parser.add_argument('--topology', type=str, choices=['Conv2','MNIST_3M'],
+                            default='Conv2', help='NN topology (default: Conv2)')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -143,8 +145,10 @@ if __name__ == "__main__":
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     loss_criterion = F.nll_loss
     
-    
-    model = Conv2()
+    if args.topology == 'Conv2':
+        model = Conv2()
+    elif args.topology == 'MNIST_3M':
+        model = MNIST_3M()
 
     if args.ne_opt == 'OpenAI-ES':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
