@@ -31,6 +31,32 @@ class Conv2(nn.Module):
     x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
     x = self.fc(x)
     return F.log_softmax(x, dim=0)
+
+#network used in arxiv 1712.06564 and 1906.03139
+class MNIST_3M(nn.Module):
+  def __init__(self):
+    super(MNIST_3M, self).__init__()
+    self.num_filter1 = 32
+    self.num_filter2 = 64
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding)
+    # feature map size is 7*7 by pooling
+    self.fc1 = nn.Linear(self.num_filter2*7*7, 1024)
+    self.fc2 = nn.Linear(1024, 10)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc1(x)
+    x = self.fc2(x)
+    return F.log_softmax(x, dim=0)
+
     
 def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
