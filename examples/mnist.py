@@ -10,9 +10,9 @@ from darwinn.optimizers.dnn import GAOptimizer
 import argparse
 from torch.utils.data.distributed import DistributedSampler
 
-class Conv2(nn.Module):
+class MNIST_10K(nn.Module):
   def __init__(self):
-    super(Conv2, self).__init__()
+    super(MNIST_10K, self).__init__()
     self.num_filter1 = 8
     self.num_filter2 = 16
     self.num_padding = 2
@@ -57,6 +57,53 @@ class MNIST_3M(nn.Module):
     x = self.fc2(x)
     return F.log_softmax(x, dim=0)
 
+#network used in arxiv 1906.03139
+class MNIST_30K(nn.Module):
+  def __init__(self):
+    super(MNIST_30K, self).__init__()
+    self.num_filter1 = 16
+    self.num_filter2 = 32
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding, bias=True)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding, bias=True)
+    # feature map size is 7*7 by pooling
+    self.fc = nn.Linear(self.num_filter2*7*7, 10, bias=True)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc(x)
+    return F.log_softmax(x, dim=0)
+
+#network used in arxiv 1906.03139
+class MNIST_500K(nn.Module):
+  def __init__(self):
+    super(MNIST_500K, self).__init__()
+    self.num_filter1 = 32
+    self.num_filter2 = 64
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding, bias=True)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding, bias=True)
+    # feature map size is 7*7 by pooling
+    self.fc1 = nn.Linear(self.num_filter2*7*7, 128, bias=True)
+    self.fc2 = nn.Linear(128, 10, bias=True)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc1(x)
+    x = self.fc2(x)
+    return F.log_softmax(x, dim=0)
     
 def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -123,8 +170,8 @@ if __name__ == "__main__":
                         help='enables printing loss during training')
     parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
                         help='choose which neuroevolution optimizer to use')
-    parser.add_argument('--topology', type=str, choices=['Conv2','MNIST_3M'],
-                            default='Conv2', help='NN topology (default: Conv2)')
+    parser.add_argument('--topology', type=str, choices=['MNIST_10K','MNIST_30K','MNIST_500K','MNIST_3M'],
+                            default='MNIST_10K', help='NN topology (default: MNIST_10K)')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
