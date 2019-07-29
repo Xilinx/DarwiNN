@@ -92,6 +92,101 @@ class NiN(nn.Module):
         x = x.view(x.size(0), 10)
         return x
 
+class CIF_300K(nn.Module):
+    def __init__(self):
+        super(CIF_300K, self).__init__()
+        self.conv1 = nn.Conv2d(  3,  64, kernel_size=3, stride=1, padding=2, groups=64)
+        self.conv2 = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=2, groups=64)
+        self.conv3 = nn.Conv2d( 64, 128, kernel_size=3, stride=2, padding=2, groups=128)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, groups=128)
+        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, groups=128)
+        self.conv6 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=2, groups=256)
+        self.conv7 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, groups=256)
+        self.conv8 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, groups=256)
+        self.conv9 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=2, groups=512)
+        self.fc = nn.Linear(512,10)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = self.conv4(out)
+        out = self.conv5(out)
+        out = self.conv6(out)
+        out = self.conv7(out)
+        out = self.conv8(out)
+        out = self.conv9(out)
+        out = F.avg_pool2d(out,kernel_size=8, stride=1, ceil_mode=True)
+        out = out.view(512, -1)
+        out = self.fc(out)
+        return out
+        
+class CIF_900K(nn.Module):
+    def __init__(self):
+        super(CIF_900K, self).__init__()
+        self.conv1 = nn.Conv2d(  3,  64, kernel_size=3, stride=1, padding=2, groups=64)
+        self.conv2 = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=2, groups=64)
+        self.conv3 = nn.Conv2d( 64, 128, kernel_size=3, stride=2, padding=2, groups=128)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, groups=128)
+        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, groups=128)
+        self.conv6 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=2, groups=256)
+        self.conv7 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, groups=256)
+        self.conv8 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, groups=256)
+        self.conv9 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=2, groups=512)
+        self.conv10 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, groups=512)
+        self.conv11 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, groups=512)
+        self.fc = nn.Linear(512,10)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = self.conv4(out)
+        out = self.conv5(out)
+        out = self.conv6(out)
+        out = self.conv7(out)
+        out = self.conv8(out)
+        out = self.conv9(out)
+        out = self.conv10(out)
+        out = self.conv11(out)
+        out = F.avg_pool2d(out,kernel_size=8, stride=1, ceil_mode=True)
+        out = out.view(512, -1)
+        out = self.fc(out)
+        return out
+
+class CIF_8M(nn.Module):
+    def __init__(self):
+        super(CIF_8M, self).__init__()
+        self.conv1 = nn.Conv2d(  3,  64, kernel_size=3, stride=1, padding=2)
+        self.conv2 = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=2)
+        self.conv3 = nn.Conv2d( 64, 128, kernel_size=3, stride=2, padding=2)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2)
+        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2)
+        self.conv6 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=2)
+        self.conv7 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2)
+        self.conv8 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2)
+        self.conv9 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=2)
+        self.conv10 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2)
+        self.conv11 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2)
+        self.fc = nn.Linear(512,10)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = self.conv4(out)
+        out = self.conv5(out)
+        out = self.conv6(out)
+        out = self.conv7(out)
+        out = self.conv8(out)
+        out = self.conv9(out)
+        out = self.conv10(out)
+        out = self.conv11(out)
+        out = F.avg_pool2d(out,kernel_size=8, stride=1, ceil_mode=True)
+        out = out.view(512, -1)
+        out = self.fc(out)
+        return out
+
 def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
@@ -145,7 +240,7 @@ if __name__ == "__main__":
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--topology', type=str, choices=['LeNet','c10q','NiN'],
+    parser.add_argument('--topology', type=str, choices=['LeNet','c10q','NiN','CIF_300K','CIF_900K','CIF_8M'],
 	                    default='LeNet', help='NN topology (default: LeNet)')
     parser.add_argument('--popsize', type=int, default=100, metavar='N',
                         help='population size (default: 100)')
@@ -183,6 +278,12 @@ if __name__ == "__main__":
         model = c10q()
     elif args.topology == 'NiN':
         model = NiN()
+    elif args.topology == 'CIF_300K':
+        model = CIF_300K()
+    elif args.topology == 'CIF_900K':
+        model = CIF_900K()
+    elif args.topology == 'CIF_8M':
+        model = CIF_8M()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     #wrap optimizer into a OpenAI-ES optimizer
