@@ -1,13 +1,10 @@
-import time
-import sys
-import os
 import torch
 import torch.distributed as t_d
 import torch.multiprocessing as mp
 import copy
 import numpy as np
 import math
-import argparse
+from darwinn.utils.fitness import compute_centered_ranks
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
@@ -149,17 +146,8 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         else:
             raise ValueError
 
-    def compute_centered_ranks(self,x):
-        centered = torch.zeros(len(x), dtype = torch.float, device = self.environment.device)
-        sort, ind = x.sort()
-        for i in range(len(x)):
-            centered[ind[i].data] = i
-        centered = torch.div(centered, len(x) - 1)
-        centered = centered - 0.5
-        return centered
-
     def select(self):
-        self.fitness_global = self.compute_centered_ranks(-self.fitness_global)
+        self.fitness_global = compute_centered_ranks(-self.fitness_global, device=self.environment.device)
 
     def adapt(self):
         gradient = torch.mm(self.epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))

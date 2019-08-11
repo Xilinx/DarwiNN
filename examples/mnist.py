@@ -192,8 +192,12 @@ if __name__ == "__main__":
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     loss_criterion = F.nll_loss
     
-    if args.topology == 'Conv2':
-        model = Conv2()
+    if args.topology == 'MNIST_10K':
+        model = MNIST_10K()
+    elif args.topology == 'MNIST_30K':
+        model = MNIST_30K()
+    elif args.topology == 'MNIST_500K':
+        model = MNIST_500K()
     elif args.topology == 'MNIST_3M':
         model = MNIST_3M()
 
