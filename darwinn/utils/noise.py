@@ -94,42 +94,46 @@ class NoiseGenerator(object):
             self.mutate_noise = torch.empty((self.popsize//self.nodes,self.nparams),device=self.device)
             self.update_noise = torch.empty((self.popsize,self.nparams//self.nodes),device=self.device)
             self.num_blocks = self.nodes*self.nodes
-            self.mutate_blocks = torch.chunk(self.mutate_noise,self.nodes,dim=0)
-            self.update_blocks = torch.chunk(self.update_noise,self.nodes,dim=1)
-            self.mutate_block_indices = np.arange(self.nodes,dtype=np.int)+self.rank
-            self.update_block_indices = np.arange(self.nodes,dtype=np.int)*self.rank
+            self.mutate_blocks = torch.chunk(self.mutate_noise,self.nodes,dim=1)
+            self.update_blocks = torch.chunk(self.update_noise,self.nodes,dim=0)
+            self.mutate_block_indices = np.arange(self.nodes,dtype=np.int)+self.rank*self.nodes
+            self.update_block_indices = np.arange(self.nodes,dtype=np.int)*self.nodes+self.rank
             self.mutate_block_generated = np.zeros(len(self.mutate_block_indices),dtype=bool)
             self.update_block_generated = np.zeros(len(self.update_block_indices),dtype=bool)
         else:
             raise Exception("Unsupported mode combination")
 
     def generate_block(self,i,x,seed):
-        torch.manual_seed(seed+self.num_blocks*self.generation)
+        s = seed+self.num_blocks*self.generation
+        torch.manual_seed(s)
         if (self.sampling == "Antithetic"):
             #TODO assert that block height is even
             half_noise = torch.chunk(x,2,dim=0)
             self.randfunc(half_noise[0].shape,out=half_noise[0])
-            half_noise[1] = half_noise[0]*-1.0
+            half_noise[1].copy_(half_noise[0])
+            half_noise[1].mul_(-1.0)
         else:
             self.randfunc(x.shape, out=x)
 
+    def generate_noise(self,indices,blocks,flags):    
+        for i in range(len(indices)):
+            if not flags[i]:
+                self.generate_block(i,blocks[i],indices[i])
+                flags[i]=True
+
     def generate_update_noise(self): 
-        for i in range(len(self.update_block_indices)):
-            if not self.update_block_generated[i]:
-                self.generate_block(i,self.update_blocks[i],self.update_block_indices[i])
-                self.update_block_generated[i]=True
+        self.generate_noise(self.update_block_indices,self.update_blocks,self.update_block_generated)
         return self.update_noise
     
     def generate_mutate_noise(self):    
-        import pdb
-        pdb.set_trace()
-        for i in range(len(self.mutate_block_indices)):
-            if not self.mutate_block_generated[i]:
-                self.generate_block(i,self.mutate_blocks[i],self.mutate_block_indices[i])
-                self.mutate_block_generated[i]=True
+        self.generate_noise(self.mutate_block_indices,self.mutate_blocks,self.mutate_block_generated)
         return self.mutate_noise
     
     def step(self):
         #advance seeds; no seed must ever be used twice
         self.generation += 1
-        
+        #reset flags
+        for i in range(len(self.mutate_block_indices)):
+            self.mutate_block_generated[i] = False
+        for i in range(len(self.update_block_indices)):
+            self.update_block_generated[i] = False
