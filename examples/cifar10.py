@@ -265,8 +265,7 @@ def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        ne_optimizer.eval_fitness(data, target)
-        ne_optimizer.step()#no backward pass, adapt instead of step
+        ne_optimizer.step(data, target)
         if batch_idx % args.log_interval == 0 and args.verbose:
             print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 

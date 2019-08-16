@@ -5,6 +5,7 @@ import copy
 import numpy as np
 import math
 from darwinn.utils.fitness import compute_centered_ranks
+from darwinn.utils.noise import *
 
 class DarwiNNOptimizer(object):
     """Abstract class for optimizer functions"""
@@ -42,8 +43,18 @@ class DarwiNNOptimizer(object):
         #initialize generation
         self.generation = 1
     
-    #performs selection and adaption according to results of a fitness evaluation
-    def step(self):
+    #performs one generation of the evolution process
+    def step(self, data, target):
+        self.mutate()
+        self.eval_fitness(data, target)
+        self.synchronize_fitness()
+        self.select()
+        self.adapt()
+        self.epsilon.step()
+        self.generation += 1
+
+    #performs fitness synchronization between workers
+    def synchronize_fitness(self):
         if self.data_parallel:
             for i in range(self.folds):
                 #all-reduce all of the local fitnesses
@@ -57,9 +68,6 @@ class DarwiNNOptimizer(object):
                 torch.cat(self.fitness_list, out=self.fitness_global)
             else: #work-around for bug in Gloo for np=1
                 self.fitness_global = self.fitness_local
-        self.select()
-        self.adapt()
-        self.generation += 1
     
     #select by fitness and prepare for next generation
     def select(self):
@@ -134,7 +142,13 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.distribution = distribution
         self.sampling = sampling
         self.sigma = sigma
-        self.epsilon = torch.zeros((self.popsize,self.num_parameters), device=self.environment.device)
+        #initialize noise generator
+        if self.data_parallel:
+            self.mutate_noise_mode = NoiseMode.FULL #for DDP, mutate all population
+        else:
+            self.mutate_noise_mode = NoiseMode.SLICE_H #for DPP, mutate just population assigned to local node
+        self.epsilon = NoiseGenerator(self.popsize, self.num_parameters, self.environment.device, self.environment.number_nodes, self.environment.rank, distribution=self.distribution, sampling=self.sampling, mutate_mode=self.mutate_noise_mode)
+        self.theta_noisy = None
         if not data_parallel:
             self.fold_offset = self.environment.rank*self.folds
         else:
@@ -150,29 +164,19 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.fitness_global = compute_centered_ranks(-self.fitness_global, device=self.environment.device)
 
     def adapt(self):
-        gradient = torch.mm(self.epsilon.t(), self.fitness_global.view(len(self.fitness_global), 1))
+        gradient = torch.mm(self.epsilon.generate_update_noise().t(), self.fitness_global.view(len(self.fitness_global), 1))
         self.update_grad(-gradient)
         self.optimizer.step()
         self.update_theta()
         #update local model from theta
         self.update_model(self.theta)
     
-    def gen_epsilon(self):
-        if (self.sampling == "Antithetic"):
-            half_epsilon = self.randfunc((self.popsize//2,self.num_parameters), device=self.environment.device)*self.sigma
-            opposite_epsilon = half_epsilon*-1.0
-            self.epsilon = torch.cat((half_epsilon,opposite_epsilon),0)
-        else:
-            self.epsilon = self.randfunc((self.popsize,self.num_parameters), device=self.environment.device)*self.sigma
-
-    def mutate(self, fold_index):
-        theta_noisy = self.theta + self.epsilon[fold_index+self.fold_offset]
-        return theta_noisy
+    def mutate(self):
+        self.theta_noisy = self.theta + self.epsilon.generate_mutate_noise()*self.sigma
     
     def eval_fitness(self, data, target):
-        self.gen_epsilon()
         for i in range(self.folds):
-            self.update_model(self.mutate(i))
+            self.update_model(self.theta_noisy[i])
             output = self.model(data)
             self.fitness_local[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness_local).item()

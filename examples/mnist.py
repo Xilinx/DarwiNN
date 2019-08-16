@@ -109,8 +109,7 @@ def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        ne_optimizer.eval_fitness(data, target)
-        ne_optimizer.step()#no backward pass, adapt instead of step
+        ne_optimizer.step(data, target)
         if batch_idx % args.log_interval == 0 and args.verbose:
             print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 
@@ -207,7 +206,7 @@ if __name__ == "__main__":
         ne_optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
     else:
         ne_optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
-    
+
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)
         if env.rank == 0 and not args.no_test:
