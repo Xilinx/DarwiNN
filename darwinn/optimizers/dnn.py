@@ -26,9 +26,9 @@ class DarwiNNOptimizer(object):
         self.folds = self.popsize // self.nodes
         print("NE Optimizer parameters: population=",self.popsize,", folds=",self.folds)
         #define data structures to hold fitness values
-        self.fitness_list = [torch.zeros((self.folds,), device=self.environment.device) for i in range(self.nodes)]
-        self.fitness_global = torch.zeros((self.popsize,), device=self.environment.device)
-        self.fitness_local = torch.zeros((self.folds,), device=self.environment.device)
+        self.fitness_global = torch.empty((self.popsize,), device=self.environment.device)
+        self.fitness_list = list(torch.chunk(self.fitness_global,self.nodes,dim=0))
+        self.fitness_local = self.fitness_list[self.environment.rank if self.nodes != 1 else 0]
         #initialize model and theta
         self.model_adapt = model
         self.model = copy.deepcopy(model)
@@ -37,9 +37,14 @@ class DarwiNNOptimizer(object):
             self.model_adapt.cuda()
         self.num_parameters = self.count_num_parameters()
         self.criterion = criterion
-        self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
+        self.theta = torch.empty((self.num_parameters), device=self.environment.device)
         self.update_theta()
         self.loss = 0
+        #fitness synchronization depends on parallelism mode
+        if self.data_parallel:
+            self.fitness_sync_mode = "AVERAGE"
+        else:
+            self.fitness_sync_mode = "GATHER"
         #initialize generation
         self.generation = 1
     
@@ -47,27 +52,10 @@ class DarwiNNOptimizer(object):
     def step(self, data, target):
         self.mutate()
         self.eval_fitness(data, target)
-        self.synchronize_fitness()
+        self.environment.synchronize(self.fitness_local,mode=self.fitness_sync_mode,lst=self.fitness_list)
         self.select()
         self.adapt()
-        self.epsilon.step()
         self.generation += 1
-
-    #performs fitness synchronization between workers
-    def synchronize_fitness(self):
-        if self.data_parallel:
-            for i in range(self.folds):
-                #all-reduce all of the local fitnesses
-                self.environment.all_reduce(self.fitness_local[i])
-            #average local fitness sum to obtain global fitness 
-            self.fitness_global = self.fitness_local / self.environment.number_nodes
-        else:
-            if self.environment.number_nodes > 1:
-                #all-gather fitness to dapt theta
-                self.environment.all_gather(self.fitness_local,self.fitness_list)
-                torch.cat(self.fitness_list, out=self.fitness_global)
-            else: #work-around for bug in Gloo for np=1
-                self.fitness_global = self.fitness_local
     
     #select by fitness and prepare for next generation
     def select(self):
@@ -136,23 +124,43 @@ class DarwiNNOptimizer(object):
     
 class OpenAIESOptimizer(DarwiNNOptimizer):
     """Implements Open-AI ES optimizer"""
-    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100, data_parallel=False):
+    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100, data_parallel=False, semi_updates=False, orthogonal_updates=False):
         super(OpenAIESOptimizer,self).__init__(environment, model, criterion, popsize, data_parallel)
         self.optimizer = optimizer
         self.distribution = distribution
         self.sampling = sampling
         self.sigma = sigma
+        #chunk theta
+        self.theta_list = list(torch.chunk(self.theta,self.nodes,dim=0))
+        self.theta_local = self.theta_list[self.environment.rank if self.nodes != 1 else 0]
+        #configure theta updates
+        if data-parallel and (orthogonal_updates or semi_updates):
+            raise Exception("Semi- or Orthogonal Theta updates cannot be performed in data-parallel mode")
+        self.semi_updates = semi_updates
+        self.orthogonal_updates = orthogonal_updates
+        if self.semi_updates:
+            self.fitness_sync_mode = "NONE"
+            self.theta_sync_mode = "AVERAGE"
+            self.fitness_for_update = self.fitness_local
+            self.update_noise_mode = SLICE_H
+            self.gradient = self.theta
+        elif self.orthogonal_updates:
+            self.fitness_sync_mode = "GATHER"
+            self.theta_sync_mode = "GATHER"
+            self.fitness_for_update = self.fitness_global
+            self.update_noise_mode = SLICE_V
+        else:
+            self.fitness_sync_mode = "GATHER"
+            self.theta_sync_mode = "NONE"
+            self.fitness_for_update = self.fitness_global
+            self.update_noise_mode = FULL
         #initialize noise generator
         if self.data_parallel:
             self.mutate_noise_mode = NoiseMode.FULL #for DDP, mutate all population
         else:
             self.mutate_noise_mode = NoiseMode.SLICE_H #for DPP, mutate just population assigned to local node
-        self.epsilon = NoiseGenerator(self.popsize, self.num_parameters, self.environment.device, self.environment.number_nodes, self.environment.rank, distribution=self.distribution, sampling=self.sampling, mutate_mode=self.mutate_noise_mode)
+        self.epsilon = NoiseGenerator(self.popsize, self.num_parameters, self.environment.device, self.environment.number_nodes, self.environment.rank, distribution=self.distribution, sampling=self.sampling, mutate_mode=self.mutate_noise_mode, update_mode=self.update_noise_mode)
         self.theta_noisy = None
-        if not data_parallel:
-            self.fold_offset = self.environment.rank*self.folds
-        else:
-            self.fold_offset = 0
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):
@@ -161,17 +169,20 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             raise ValueError
 
     def select(self):
-        self.fitness_global = compute_centered_ranks(-self.fitness_global, device=self.environment.device)
+        self.fitness_for_update = compute_centered_ranks(-self.fitness_for_update, device=self.environment.device)
 
     def adapt(self):
-        gradient = torch.mm(self.epsilon.generate_update_noise().t(), self.fitness_global.view(len(self.fitness_global), 1))
-        self.update_grad(-gradient)
+        #compute gradient in theta_local
+        self.theta_local = torch.mm(self.epsilon.generate_update_noise().t(), self.fitness_for_update.view(len(self.fitness_global), 1))
+        #synchronize gradient
+        self.environment.synchronize(self.theta, mode=self.theta_sync_mode, lst=self.theta_list)
+        #use gradients to update model and then get new theta
+        self.update_grad(-self.theta)
         self.optimizer.step()
         self.update_theta()
-        #update local model from theta
-        self.update_model(self.theta)
     
     def mutate(self):
+        self.epsilon.step()
         self.theta_noisy = self.theta + self.epsilon.generate_mutate_noise()*self.sigma
     
     def eval_fitness(self, data, target):
@@ -214,12 +225,11 @@ class GAOptimizer(DarwiNNOptimizer):
             self.population[i] += parent_2 * parent2_select
             #mutation
             self.population[i] += torch.randn((self.num_parameters,), device=self.environment.device)*self.sigma
-            
+
     def adapt(self):
         pass
 
     def eval_fitness(self, data, target):
-        self.mutate()
         for i in range(self.folds):
             self.update_model(self.population[self.fold_offset+i])
             output = self.model(data)
