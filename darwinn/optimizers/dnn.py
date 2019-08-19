@@ -134,7 +134,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.theta_list = list(torch.chunk(self.theta,self.nodes,dim=0))
         self.theta_local = self.theta_list[self.environment.rank if self.nodes != 1 else 0]
         #configure theta updates
-        if data-parallel and (orthogonal_updates or semi_updates):
+        if data_parallel and (orthogonal_updates or semi_updates):
             raise Exception("Semi- or Orthogonal Theta updates cannot be performed in data-parallel mode")
         self.semi_updates = semi_updates
         self.orthogonal_updates = orthogonal_updates
@@ -142,18 +142,18 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.fitness_sync_mode = "NONE"
             self.theta_sync_mode = "AVERAGE"
             self.fitness_for_update = self.fitness_local
-            self.update_noise_mode = SLICE_H
+            self.update_noise_mode = NoiseMode.SLICE_H
             self.gradient = self.theta
         elif self.orthogonal_updates:
             self.fitness_sync_mode = "GATHER"
             self.theta_sync_mode = "GATHER"
             self.fitness_for_update = self.fitness_global
-            self.update_noise_mode = SLICE_V
+            self.update_noise_mode = NoiseMode.SLICE_V
         else:
             self.fitness_sync_mode = "GATHER"
             self.theta_sync_mode = "NONE"
             self.fitness_for_update = self.fitness_global
-            self.update_noise_mode = FULL
+            self.update_noise_mode = NoiseMode.FULL
         #initialize noise generator
         if self.data_parallel:
             self.mutate_noise_mode = NoiseMode.FULL #for DDP, mutate all population
