@@ -177,7 +177,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
 
     def adapt(self):
         #compute gradient (with optional synchronization) and put it in theta
-        torch.mm(self.epsilon.generate_update_noise().t(), self.fitness_shaped.view(len(self.fitness_shaped), 1), out=self.gradient_for_update)
+        torch.mv(self.epsilon.generate_update_noise().t(), self.fitness_shaped, out=self.gradient_for_update)
         #synchronize gradient
         self.environment.synchronize(self.gradient_for_update, mode=self.gradient_sync_mode, lst=self.gradient_list)
         #use gradients to update model and then get new theta
@@ -239,4 +239,4 @@ class GAOptimizer(DarwiNNOptimizer):
             output = self.model(data)
             self.fitness_local[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness_local).item()
-        
+
