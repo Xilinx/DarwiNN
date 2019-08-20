@@ -130,9 +130,10 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.distribution = distribution
         self.sampling = sampling
         self.sigma = sigma
-        #chunk theta
-        self.theta_list = list(torch.chunk(self.theta,self.nodes,dim=0))
-        self.theta_local = self.theta_list[self.environment.rank if self.nodes != 1 else 0]
+        #define gradient data structure(s)
+        self.gradient = torch.empty((self.num_parameters), device=self.environment.device)
+        self.gradient_list = list(torch.chunk(self.gradient,self.nodes,dim=0))
+        self.gradient_local = self.gradient_list[self.environment.rank if self.nodes != 1 else 0]
         #configure theta updates
         if data_parallel and (orthogonal_updates or semi_updates):
             raise Exception("Semi- or Orthogonal Theta updates cannot be performed in data-parallel mode")
@@ -140,27 +141,32 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.orthogonal_updates = orthogonal_updates
         if self.semi_updates:
             self.fitness_sync_mode = "NONE"
-            self.theta_sync_mode = "AVERAGE"
+            self.gradient_sync_mode = "AVERAGE"
             self.fitness_for_update = self.fitness_local
             self.update_noise_mode = NoiseMode.SLICE_H
-            self.gradient = self.theta
+            self.gradient_for_update = self.gradient
         elif self.orthogonal_updates:
             self.fitness_sync_mode = "GATHER"
-            self.theta_sync_mode = "GATHER"
+            self.gradient_sync_mode = "GATHER"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.SLICE_V
+            self.gradient_for_update = self.gradient_local
         else:
             self.fitness_sync_mode = "GATHER"
-            self.theta_sync_mode = "NONE"
+            self.gradient_sync_mode = "NONE"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.FULL
+            self.gradient_for_update = self.gradient
         #initialize noise generator
         if self.data_parallel:
             self.mutate_noise_mode = NoiseMode.FULL #for DDP, mutate all population
         else:
             self.mutate_noise_mode = NoiseMode.SLICE_H #for DPP, mutate just population assigned to local node
         self.epsilon = NoiseGenerator(self.popsize, self.num_parameters, self.environment.device, self.environment.number_nodes, self.environment.rank, distribution=self.distribution, sampling=self.sampling, mutate_mode=self.mutate_noise_mode, update_mode=self.update_noise_mode)
+        #temporary variables
         self.theta_noisy = None
+        self.fitness_shaped = None
+        #define random distribution
         if (self.distribution == "Gaussian"):
             self.randfunc = torch.randn
         elif (self.distribution == "Uniform"):
@@ -169,15 +175,15 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             raise ValueError
 
     def select(self):
-        self.fitness_for_update = compute_centered_ranks(-self.fitness_for_update, device=self.environment.device)
+        self.fitness_shaped = compute_centered_ranks(-self.fitness_for_update, device=self.environment.device)
 
     def adapt(self):
-        #compute gradient in theta_local
-        self.theta_local = torch.mm(self.epsilon.generate_update_noise().t(), self.fitness_for_update.view(len(self.fitness_global), 1))
+        #compute gradient (with optional synchronization) and put it in theta
+        torch.mm(self.epsilon.generate_update_noise().t(), self.fitness_shaped.view(len(self.fitness_shaped), 1), out=self.gradient_for_update)
         #synchronize gradient
-        self.environment.synchronize(self.theta, mode=self.theta_sync_mode, lst=self.theta_list)
+        self.environment.synchronize(self.gradient_for_update, mode=self.gradient_sync_mode, lst=self.gradient_list)
         #use gradients to update model and then get new theta
-        self.update_grad(-self.theta)
+        self.update_grad(-self.gradient)
         self.optimizer.step()
         self.update_theta()
     
