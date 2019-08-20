@@ -65,11 +65,11 @@ class DarwiNNEnvironment(object):
         if mode == "NONE":
             pass
         elif mode == "AVERAGE":
-            self.environment.all_reduce(x)
+            self.all_reduce(x)
             x /= self.number_nodes
         elif mode == "GATHER":
             if self.number_nodes > 1:
-                self.environment.all_gather(x,lst)
+                self.all_gather(x,lst)
             else: #work-around for bug in Gloo for np=1
                 pass
         else:

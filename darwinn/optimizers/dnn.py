@@ -140,19 +140,17 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.semi_updates = semi_updates
         self.orthogonal_updates = orthogonal_updates
         if self.semi_updates:
-            self.fitness_sync_mode = "NONE"
+            self.fitness_sync_mode = "NONE" #prevent fitness synchronization, not required in this mode
             self.gradient_sync_mode = "AVERAGE"
             self.fitness_for_update = self.fitness_local
             self.update_noise_mode = NoiseMode.SLICE_H
             self.gradient_for_update = self.gradient
         elif self.orthogonal_updates:
-            self.fitness_sync_mode = "GATHER"
             self.gradient_sync_mode = "GATHER"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.SLICE_V
             self.gradient_for_update = self.gradient_local
         else:
-            self.fitness_sync_mode = "GATHER"
             self.gradient_sync_mode = "NONE"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.FULL
