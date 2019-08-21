@@ -109,8 +109,7 @@ def train(epoch, train_loader, ne_optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        ne_optimizer.eval_fitness(data, target)
-        ne_optimizer.step()#no backward pass, adapt instead of step
+        ne_optimizer.step(data, target)
         if batch_idx % args.log_interval == 0 and args.verbose:
             print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 
@@ -152,8 +151,13 @@ if __name__ == "__main__":
                         help='disables CUDA training')
     parser.add_argument('--no-test', action='store_true', default=False,
                         help='disables testing')
-    parser.add_argument('--ddp', action='store_true', default=False,
+    dist_mode = parser.add_mutually_exclusive_group()
+    dist_mode.add_argument('--ddp', action='store_true', default=False,
                         help='performs Distributed Data-Parallel evolution')
+    dist_mode.add_argument('--semi-updates', action='store_true', default=False,
+                        help='performs Semi-Updates in OpenAI-ES')
+    dist_mode.add_argument('--orthogonal-updates', action='store_true', default=False,
+                        help='performs Orthogonal Updates in OpenAI-ES')
     parser.add_argument('--seed', type=int, default=42, metavar='S',
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
@@ -204,10 +208,10 @@ if __name__ == "__main__":
     if args.ne_opt == 'OpenAI-ES':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         #wrap optimizer into a OpenAI-ES optimizer
-        ne_optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
+        ne_optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
     else:
         ne_optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
-    
+
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, ne_optimizer, args)
         if env.rank == 0 and not args.no_test:
