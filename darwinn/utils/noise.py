@@ -96,7 +96,7 @@ class NoiseGenerator(object):
             #we need to allocate separate buffers for the update and mutate noise, because they don't fully overlap
             #the get_noise function has to do the proper assembly
             self.mutate_noise = torch.empty((hslice_height_actual,self.nparams),device=self.device)
-            self.update_noise = torch.empty((self.popsize,self.vslice_width_actual),device=self.device)
+            self.update_noise = torch.empty((self.popsize,vslice_width_actual),device=self.device)
             self.num_blocks = self.nodes*self.nodes
             self.mutate_blocks = torch.chunk(self.mutate_noise,self.nodes,dim=1)
             self.update_blocks = torch.chunk(self.update_noise,self.nodes,dim=0)
