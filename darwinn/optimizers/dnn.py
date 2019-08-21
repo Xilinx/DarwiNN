@@ -131,7 +131,12 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.sampling = sampling
         self.sigma = sigma
         #define gradient data structure(s)
-        self.gradient = torch.empty((self.num_parameters), device=self.environment.device)
+        if self.orthogonal_updates:
+            gradient_chunk_size = math.ceil(self.num_parameters/self.nodes)
+            gradients_len = gradient_chunk_size*self.nodes #round up gradient size to evenly divide into number of nodes
+        else:
+            gradients_len = self.num_parameters
+        self.gradient = torch.empty((gradients_len), device=self.environment.device)
         self.gradient_list = list(torch.chunk(self.gradient,self.nodes,dim=0))
         self.gradient_local = self.gradient_list[self.environment.rank if self.nodes != 1 else 0]
         #configure theta updates
@@ -149,7 +154,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.gradient_sync_mode = "GATHER"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.SLICE_V
-            self.gradient_for_update = self.gradient_local
+            self.gradient_for_update = self.gradient_local[:min(gradient_chunk_size,gradients_len-self.environment.rank*gradient_chunk_size)]
         else:
             self.gradient_sync_mode = "NONE"
             self.fitness_for_update = self.fitness_global
