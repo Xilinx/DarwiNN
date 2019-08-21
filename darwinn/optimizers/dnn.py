@@ -130,8 +130,18 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.distribution = distribution
         self.sampling = sampling
         self.sigma = sigma
+        #configure theta updates
+        if data_parallel and (orthogonal_updates or semi_updates):
+            raise Exception("Semi- or Orthogonal Theta updates cannot be performed in data-parallel mode")
+        self.semi_updates = semi_updates
+        self.orthogonal_updates = orthogonal_updates
         #define gradient data structure(s)
-        self.gradient = torch.empty((self.num_parameters), device=self.environment.device)
+        if self.orthogonal_updates:
+            gradient_chunk_size = math.ceil(self.num_parameters/self.nodes)
+            gradients_len = gradient_chunk_size*self.nodes #round up gradient size to evenly divide into number of nodes
+        else:
+            gradients_len = self.num_parameters
+        self.gradient = torch.empty((gradients_len), device=self.environment.device)
         self.gradient_list = list(torch.chunk(self.gradient,self.nodes,dim=0))
         self.gradient_local = self.gradient_list[self.environment.rank if self.nodes != 1 else 0]
         #configure theta updates
@@ -145,16 +155,19 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
             self.fitness_for_update = self.fitness_local
             self.update_noise_mode = NoiseMode.SLICE_H
             self.gradient_for_update = self.gradient
+            self.gradient_for_sync = self.gradient
         elif self.orthogonal_updates:
             self.gradient_sync_mode = "GATHER"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.SLICE_V
-            self.gradient_for_update = self.gradient_local
+            self.gradient_for_sync = self.gradient_local
+            self.gradient_for_update = self.gradient_local[:min(gradient_chunk_size,gradients_len-self.environment.rank*gradient_chunk_size)]
         else:
             self.gradient_sync_mode = "NONE"
             self.fitness_for_update = self.fitness_global
             self.update_noise_mode = NoiseMode.FULL
             self.gradient_for_update = self.gradient
+            self.gradient_for_sync = self.gradient
         #initialize noise generator
         if self.data_parallel:
             self.mutate_noise_mode = NoiseMode.FULL #for DDP, mutate all population
@@ -179,7 +192,7 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         #compute gradient (with optional synchronization) and put it in theta
         torch.mv(self.epsilon.generate_update_noise().t(), self.fitness_shaped, out=self.gradient_for_update)
         #synchronize gradient
-        self.environment.synchronize(self.gradient_for_update, mode=self.gradient_sync_mode, lst=self.gradient_list)
+        self.environment.synchronize(self.gradient_for_sync, mode=self.gradient_sync_mode, lst=self.gradient_list)
         #use gradients to update model and then get new theta
         self.update_grad(-self.gradient)
         self.optimizer.step()

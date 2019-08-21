@@ -1,4 +1,4 @@
-
+import math
 import torch
 import numpy as np
 from enum import Enum
@@ -7,7 +7,7 @@ class NoiseMode(Enum):
     FULL = 1    # manipulate entire noise matrix
     SLICE_V = 2 # manipulate vertical slices of the matrix
     SLICE_H = 3 # manipulate horizontal slices of the matrix
-    TILE = 4    # manipulate tiles created by applying both horizontal and vertical tiling
+    TILE = 4    # manipulate tiles created by applying both horizontal and vertical slicing
 
 class NoiseGenerator(object):
     """Implements noise generation functions"""
@@ -36,6 +36,10 @@ class NoiseGenerator(object):
         #TODO: JIT/sequential generation of blocks to minimize memory utilization
 
     def setup_buffers(self):
+        vslice_width_nominal = math.ceil(self.nparams/self.nodes)
+        hslice_height_nominal = math.ceil(self.popsize/self.nodes)
+        vslice_width_actual = min(vslice_width_nominal,self.nparams-self.rank*vslice_width_nominal)
+        hslice_height_actual = min(hslice_height_nominal,self.popsize-self.rank*hslice_height_nominal)
         #assert that requested modes aren't TILE
         if (self.mutate_mode == self.update_mode):
             #allocate a buffer for the entire noise matrix
@@ -43,9 +47,9 @@ class NoiseGenerator(object):
                 self.noise = torch.empty((self.popsize,self.nparams),device=self.device)
             #allocate a buffer for a slice of the noise matrix
             elif (self.mutate_mode == NoiseMode.SLICE_H):
-                self.noise = torch.empty((self.popsize//self.nodes,self.nparams),device=self.device)
+                self.noise = torch.empty((hslice_height_actual,self.nparams),device=self.device)
             else:
-                self.noise = torch.empty((self.popsize,self.nparams//self.nodes),device=self.device)
+                self.noise = torch.empty((self.popsize,vslice_width_actual),device=self.device)
             self.mutate_noise = self.noise
             self.update_noise = self.noise
             self.mutate_blocks = (self.noise,)
@@ -91,8 +95,8 @@ class NoiseGenerator(object):
         elif (self.mutate_mode == NoiseMode.SLICE_H and self.update_mode == NoiseMode.SLICE_V):
             #we need to allocate separate buffers for the update and mutate noise, because they don't fully overlap
             #the get_noise function has to do the proper assembly
-            self.mutate_noise = torch.empty((self.popsize//self.nodes,self.nparams),device=self.device)
-            self.update_noise = torch.empty((self.popsize,self.nparams//self.nodes),device=self.device)
+            self.mutate_noise = torch.empty((hslice_height_actual,self.nparams),device=self.device)
+            self.update_noise = torch.empty((self.popsize,vslice_width_actual),device=self.device)
             self.num_blocks = self.nodes*self.nodes
             self.mutate_blocks = torch.chunk(self.mutate_noise,self.nodes,dim=1)
             self.update_blocks = torch.chunk(self.update_noise,self.nodes,dim=0)
