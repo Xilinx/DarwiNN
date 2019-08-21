@@ -9,6 +9,7 @@ from darwinn.optimizers.dnn import OpenAIESOptimizer
 from darwinn.optimizers.dnn import GAOptimizer
 import argparse
 from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 class LeNet(nn.Module):
     def __init__(self):
@@ -291,7 +292,7 @@ def test(test_loader, model, criterion, optimizer, args):
             loss = criterion(output,target).item()
         else:
             output = optimizer.eval_theta(data, target)
-            loss = ne_optimizer.get_loss()
+            loss = optimizer.get_loss()
         # sum up batch loss
         test_loss += loss
         # get the index of the max log-probability
@@ -346,6 +347,8 @@ if __name__ == "__main__":
                         help='noise variance (default: 0.01)')
     parser.add_argument('--sampling', type=str, default="Antithetic",
                         help='sampling strategy (default: Antithetic)')
+    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
+                        help='choose which neuroevolution optimizer to use')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='enables printing loss during training')
 
@@ -384,7 +387,7 @@ if __name__ == "__main__":
     elif args.topology == 'CIF_8M':
         model = CIF_8M()
 
-   if args.backprop:
+    if args.backprop:
         if args.cuda:
             model = DDP(model.cuda(), device_ids=[torch.cuda.current_device()], output_device=torch.cuda.current_device())
         else:

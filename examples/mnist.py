@@ -136,7 +136,7 @@ def test(test_loader, model, criterion, optimizer, args):
             loss = criterion(output,target).item()
         else:
             output = optimizer.eval_theta(data, target)
-            loss = ne_optimizer.get_loss()
+            loss = optimizer.get_loss()
         # sum up batch loss
         test_loss += loss
         # get the index of the max log-probability
