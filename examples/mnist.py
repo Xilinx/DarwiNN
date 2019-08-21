@@ -9,6 +9,7 @@ from darwinn.optimizers.dnn import OpenAIESOptimizer
 from darwinn.optimizers.dnn import GAOptimizer
 import argparse
 from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 class MNIST_10K(nn.Module):
   def __init__(self):
@@ -105,23 +106,35 @@ class MNIST_500K(nn.Module):
     x = self.fc2(x)
     return F.log_softmax(x, dim=0)
     
-def train(epoch, train_loader, ne_optimizer, args):
+def train(epoch, train_loader, model, criterion, optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        ne_optimizer.step(data, target)
+        if args.backprop:
+            optimizer.zero_grad()
+            results = model(data)
+            loss = criterion(results, target)
+            loss.backward()
+            optimizer.step()
+        else:
+            optimizer.step(data, target)
         if batch_idx % args.log_interval == 0 and args.verbose:
             print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
 
-def test(test_loader, ne_optimizer, args):
+def test(test_loader, model, criterion, optimizer, args):
     test_loss = 0.
     test_accuracy = 0.
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        output = ne_optimizer.eval_theta(data, target)
+        if args.backprop:
+            output = model(data)
+            loss = criterion(output,target).item()
+        else:
+            output = optimizer.eval_theta(data, target)
+            loss = ne_optimizer.get_loss()
         # sum up batch loss
-        test_loss += ne_optimizer.get_loss()
+        test_loss += loss
         # get the index of the max log-probability
         pred = output.data.max(1, keepdim=True)[1]
         test_accuracy += pred.eq(target.data.view_as(pred)).cpu().float().sum()
@@ -152,6 +165,8 @@ if __name__ == "__main__":
     parser.add_argument('--no-test', action='store_true', default=False,
                         help='disables testing')
     dist_mode = parser.add_mutually_exclusive_group()
+    dist_mode.add_argument('--backprop', action='store_true', default=False,
+                        help='performs training with Backpropagation')
     dist_mode.add_argument('--ddp', action='store_true', default=False,
                         help='performs Distributed Data-Parallel evolution')
     dist_mode.add_argument('--semi-updates', action='store_true', default=False,
@@ -186,6 +201,9 @@ if __name__ == "__main__":
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
     train_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
     
+    if args.backprop:
+        args.ddp = True
+    
     if args.ddp:
         train_ddp_sampler = DistributedSampler(train_dataset)
         train_loader = torch.utils.data.DataLoader(train_dataset, sampler=train_ddp_sampler, batch_size=args.batch_size, **kwargs)
@@ -193,7 +211,7 @@ if __name__ == "__main__":
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     
     test_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
     loss_criterion = F.nll_loss
     
     if args.topology == 'MNIST_10K':
@@ -205,15 +223,20 @@ if __name__ == "__main__":
     elif args.topology == 'MNIST_3M':
         model = MNIST_3M()
 
-    if args.ne_opt == 'OpenAI-ES':
+    if args.backprop:
+        if args.cuda:
+            model.cuda()
+        model = DDP(model)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.ne_opt == 'OpenAI-ES':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         #wrap optimizer into a OpenAI-ES optimizer
-        ne_optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
+        optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
     else:
-        ne_optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
+        optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
 
     for epoch in range(1, args.epochs + 1):
-        train(epoch, train_loader, ne_optimizer, args)
+        train(epoch, train_loader, model, loss_criterion, optimizer, args)
         if env.rank == 0 and not args.no_test:
-            test(test_loader, ne_optimizer, args)
+            test(test_loader, model, loss_criterion, optimizer, args)
 
