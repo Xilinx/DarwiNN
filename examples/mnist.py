@@ -119,7 +119,11 @@ def train(epoch, train_loader, model, criterion, optimizer, args):
         else:
             optimizer.step(data, target)
         if batch_idx % args.log_interval == 0 and args.verbose:
-            print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
+            if args.backprop:
+                loss_val = loss.item()
+            else:
+                loss_val = optimizer.get_loss()
+            print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, loss_val))
 
 def test(test_loader, model, criterion, optimizer, args):
     test_loss = 0.
@@ -225,8 +229,9 @@ if __name__ == "__main__":
 
     if args.backprop:
         if args.cuda:
-            model.cuda()
-        model = DDP(model)
+            model = DDP(model.cuda(), device_ids=[torch.cuda.current_device()], output_device=torch.cuda.current_device())
+        else:
+            model = DDP(model)
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     elif args.ne_opt == 'OpenAI-ES':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
