@@ -9,6 +9,7 @@ from darwinn.optimizers.dnn import OpenAIESOptimizer
 from darwinn.optimizers.dnn import GAOptimizer
 import argparse
 from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 class LeNet(nn.Module):
     def __init__(self):
@@ -95,31 +96,31 @@ class NiN(nn.Module):
 class CIF_300K(nn.Module):
     def __init__(self):
         super(CIF_300K, self).__init__()
-        self.conv1d = nn.Conv2d(  3,   3, kernel_size=3, stride=1, padding=2, groups=3, bias=False)
+        self.conv1d = nn.Conv2d(  3,   3, kernel_size=3, stride=1, padding=1, groups=3, bias=False)
         self.conv1p = nn.Conv2d(  3,  64, kernel_size=1, stride=1, bias=False)
         self.conv1b = nn.BatchNorm2d(64)
-        self.conv2d = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=2, groups=64, bias=False)
+        self.conv2d = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=1, groups=64, bias=False)
         self.conv2p = nn.Conv2d( 64,  64, kernel_size=1, stride=1, bias=False)
         self.conv2b = nn.BatchNorm2d(64)
-        self.conv3d = nn.Conv2d( 64,  64, kernel_size=3, stride=2, padding=2, groups=64, bias=False)
+        self.conv3d = nn.Conv2d( 64,  64, kernel_size=3, stride=2, padding=1, groups=64, bias=False)
         self.conv3p = nn.Conv2d( 64, 128, kernel_size=1, stride=1, bias=False)
         self.conv3b = nn.BatchNorm2d(128)
-        self.conv4d = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, groups=128, bias=False)
+        self.conv4d = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, groups=128, bias=False)
         self.conv4p = nn.Conv2d(128, 128, kernel_size=1, stride=1, bias=False)
         self.conv4b = nn.BatchNorm2d(128)
-        self.conv5d = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, groups=128, bias=False)
+        self.conv5d = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, groups=128, bias=False)
         self.conv5p = nn.Conv2d(128, 128, kernel_size=1, stride=1, bias=False)
         self.conv5b = nn.BatchNorm2d(128)
-        self.conv6d = nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=2, groups=128, bias=False)
+        self.conv6d = nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1, groups=128, bias=False)
         self.conv6p = nn.Conv2d(128, 256, kernel_size=1, stride=1, bias=False)
         self.conv6b = nn.BatchNorm2d(256)
-        self.conv7d = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, groups=256, bias=False)
+        self.conv7d = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, groups=256, bias=False)
         self.conv7p = nn.Conv2d(256, 256, kernel_size=1, stride=1, bias=False)
         self.conv7b = nn.BatchNorm2d(256)
-        self.conv8d = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, groups=256, bias=False)
+        self.conv8d = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, groups=256, bias=False)
         self.conv8p = nn.Conv2d(256, 256, kernel_size=1, stride=1, bias=False)
         self.conv8b = nn.BatchNorm2d(256)
-        self.conv9d = nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=2, groups=256, bias=False)
+        self.conv9d = nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1, groups=256, bias=False)
         self.conv9p = nn.Conv2d(256, 512, kernel_size=1, stride=1, bias=False)
         self.conv9b = nn.BatchNorm2d(512)
         self.fc = nn.Linear(512,10, bias=True)
@@ -165,18 +166,18 @@ class CIF_300K(nn.Module):
 
     def forward(self, x):
         out = self.convstack(x)
-        out = F.avg_pool2d(out,kernel_size=8, stride=1, ceil_mode=True)
-        out = out.view(512, -1)
+        out = F.avg_pool2d(out,kernel_size=4, stride=1, ceil_mode=True)
+        out = out.view(out.size(0), -1)
         out = self.fc(out)
         return out
         
 class CIF_900K(CIF_300K):
     def __init__(self):
         super(CIF_900K, self).__init__()
-        self.conv10d = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, groups=512, bias=False)
+        self.conv10d = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, groups=512, bias=False)
         self.conv10p = nn.Conv2d(512, 512, kernel_size=1, stride=1, bias=False)
         self.conv10b = nn.BatchNorm2d(512)
-        self.conv11d = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, groups=512, bias=False)
+        self.conv11d = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, groups=512, bias=False)
         self.conv11p = nn.Conv2d(512, 512, kernel_size=1, stride=1, bias=False)
         self.conv11b = nn.BatchNorm2d(512)
 
@@ -190,35 +191,35 @@ class CIF_900K(CIF_300K):
         out = self.conv11p(out)
         out = self.conv11b(out)
         out = F.relu(out)
-        out = F.avg_pool2d(out,kernel_size=8, stride=1, ceil_mode=True)
-        out = out.view(512, -1)
+        out = F.avg_pool2d(out,kernel_size=4, stride=1, ceil_mode=True)
+        out = out.view(out.size(0), -1)
         out = self.fc(out)
         return out
 
 class CIF_8M(nn.Module):
     def __init__(self):
         super(CIF_8M, self).__init__()
-        self.conv1 = nn.Conv2d(  3,  64, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv1 = nn.Conv2d(  3,  64, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv1b = nn.BatchNorm2d(64)
-        self.conv2 = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv2 = nn.Conv2d( 64,  64, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv2b = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d( 64, 128, kernel_size=3, stride=2, padding=2, bias=False)
+        self.conv3 = nn.Conv2d( 64, 128, kernel_size=3, stride=2, padding=1, bias=False)
         self.conv3b = nn.BatchNorm2d(128)
-        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv4b = nn.BatchNorm2d(128)
-        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv5b = nn.BatchNorm2d(128)
-        self.conv6 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=2, bias=False)
+        self.conv6 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1, bias=False)
         self.conv6b = nn.BatchNorm2d(256)
-        self.conv7 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv7 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv7b = nn.BatchNorm2d(256)
-        self.conv8 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv8 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv8b = nn.BatchNorm2d(256)
-        self.conv9 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=2, bias=False)
+        self.conv9 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias=False)
         self.conv9b = nn.BatchNorm2d(512)
-        self.conv10 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv10 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv10b = nn.BatchNorm2d(512)
-        self.conv11 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, bias=False)
+        self.conv11 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
         self.conv11b = nn.BatchNorm2d(512)
         self.fc = nn.Linear(512,10, bias=True)
 
@@ -256,28 +257,45 @@ class CIF_8M(nn.Module):
         out = self.conv11(out)
         out = self.conv11b(out)
         out = F.relu(out)
-        out = F.avg_pool2d(out,kernel_size=8, stride=1, ceil_mode=True)
-        out = out.view(512, -1)
+        out = F.avg_pool2d(out,kernel_size=4, stride=1, ceil_mode=True)
+        out = out.view(out.size(0), -1)
         out = self.fc(out)
         return out
 
-def train(epoch, train_loader, ne_optimizer, args):
+def train(epoch, train_loader, model, criterion, optimizer, args):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        ne_optimizer.step(data, target)
+        if args.backprop:
+            optimizer.zero_grad()
+            results = model(data)
+            loss = criterion(results, target)
+            loss.backward()
+            optimizer.step()
+        else:
+            optimizer.step(data, target)
         if batch_idx % args.log_interval == 0 and args.verbose:
-            print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, ne_optimizer.get_loss()))
+            if args.backprop:
+                loss_val = loss.item()
+            else:
+                loss_val = optimizer.get_loss()
+            print('Train Epoch: {} (batch {})\tLoss: {:.6f}'.format(epoch, batch_idx, loss_val))
 
-def test(test_loader, ne_optimizer, args):
+def test(test_loader, model, criterion, optimizer, args):
     test_loss = 0.
     test_accuracy = 0.
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        output = ne_optimizer.eval_theta(data, target)
+        if args.backprop:
+            with torch.no_grad():
+                output = model(data)
+                loss = criterion(output,target).item()
+        else:
+            output = optimizer.eval_theta(data, target)
+            loss = optimizer.get_loss()
         # sum up batch loss
-        test_loss += ne_optimizer.get_loss()
+        test_loss += loss
         # get the index of the max log-probability
         pred = output.data.max(1, keepdim=True)[1]
         test_accuracy += pred.eq(target.data.view_as(pred)).cpu().float().sum()
@@ -307,8 +325,15 @@ if __name__ == "__main__":
                         help='disables CUDA training')
     parser.add_argument('--no-test', action='store_true', default=False,
                         help='disables testing')
-    parser.add_argument('--ddp', action='store_true', default=False,
+    dist_mode = parser.add_mutually_exclusive_group()
+    dist_mode.add_argument('--backprop', action='store_true', default=False,
+                        help='performs training with Backpropagation')
+    dist_mode.add_argument('--ddp', action='store_true', default=False,
                         help='performs Distributed Data-Parallel evolution')
+    dist_mode.add_argument('--semi-updates', action='store_true', default=False,
+                        help='performs Semi-Updates in OpenAI-ES')
+    dist_mode.add_argument('--orthogonal-updates', action='store_true', default=False,
+                        help='performs Orthogonal Updates in OpenAI-ES')
     parser.add_argument('--seed', type=int, default=42, metavar='S',
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
@@ -323,6 +348,8 @@ if __name__ == "__main__":
                         help='noise variance (default: 0.01)')
     parser.add_argument('--sampling', type=str, default="Antithetic",
                         help='sampling strategy (default: Antithetic)')
+    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
+                        help='choose which neuroevolution optimizer to use')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='enables printing loss during training')
 
@@ -335,6 +362,9 @@ if __name__ == "__main__":
     dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     train_dataset = datasets.CIFAR10('CIFAR10_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
     
+    if args.backprop:
+        args.ddp = True
+    
     if args.ddp:
         train_ddp_sampler = DistributedSampler(train_dataset)
         train_loader = torch.utils.data.DataLoader(train_dataset, sampler=train_ddp_sampler, batch_size=args.batch_size, **kwargs)
@@ -342,7 +372,7 @@ if __name__ == "__main__":
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     
     test_dataset = datasets.CIFAR10('CIFAR10_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, **kwargs)
     loss_criterion = nn.CrossEntropyLoss()
     
     if args.topology == 'LeNet':
@@ -358,11 +388,20 @@ if __name__ == "__main__":
     elif args.topology == 'CIF_8M':
         model = CIF_8M()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    #wrap optimizer into a OpenAI-ES optimizer
-    ne_optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp)
-    
+    if args.backprop:
+        if args.cuda:
+            model = DDP(model.cuda(), device_ids=[torch.cuda.current_device()], output_device=torch.cuda.current_device())
+        else:
+            model = DDP(model)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.ne_opt == 'OpenAI-ES':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        #wrap optimizer into a OpenAI-ES optimizer
+        optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
+    else:
+        optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
+
     for epoch in range(1, args.epochs + 1):
-        train(epoch, train_loader, ne_optimizer, args)
-        if env.rank == 0 and not args.no_test:
-            test(test_loader, ne_optimizer, args)
+        train(epoch, train_loader, model, loss_criterion, optimizer, args)
+        if (env.rank == 0 or args.backprop) and not args.no_test:
+            test(test_loader, model, loss_criterion, optimizer, args)
