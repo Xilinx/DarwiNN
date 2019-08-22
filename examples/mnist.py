@@ -132,8 +132,9 @@ def test(test_loader, model, criterion, optimizer, args):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         if args.backprop:
-            output = model(data)
-            loss = criterion(output,target).item()
+            with torch.no_grad():
+                output = model(data)
+                loss = criterion(output,target).item()
         else:
             output = optimizer.eval_theta(data, target)
             loss = optimizer.get_loss()
@@ -215,7 +216,7 @@ if __name__ == "__main__":
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     
     test_dataset = datasets.MNIST('MNIST_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, **kwargs)
     loss_criterion = F.nll_loss
     
     if args.topology == 'MNIST_10K':
@@ -242,6 +243,6 @@ if __name__ == "__main__":
 
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, model, loss_criterion, optimizer, args)
-        if env.rank == 0 and not args.no_test:
+        if (env.rank == 0 or args.backprop) and not args.no_test:
             test(test_loader, model, loss_criterion, optimizer, args)
 
