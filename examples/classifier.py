@@ -10,6 +10,102 @@ from darwinn.optimizers.dnn import GAOptimizer
 import argparse
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
+import time
+
+class MNIST_10K(nn.Module):
+  def __init__(self):
+    super(MNIST_10K, self).__init__()
+    self.num_filter1 = 8
+    self.num_filter2 = 16
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding)
+    # feature map size is 7*7 by pooling
+    self.fc = nn.Linear(self.num_filter2*7*7, 10)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc(x)
+    return F.log_softmax(x, dim=0)
+
+#network used in arxiv 1712.06564 and 1906.03139
+class MNIST_3M(nn.Module):
+  def __init__(self):
+    super(MNIST_3M, self).__init__()
+    self.num_filter1 = 32
+    self.num_filter2 = 64
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding, bias=True)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding, bias=True)
+    # feature map size is 7*7 by pooling
+    self.fc1 = nn.Linear(self.num_filter2*7*7, 1024, bias=True)
+    self.fc2 = nn.Linear(1024, 10, bias=True)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc1(x)
+    x = self.fc2(x)
+    return F.log_softmax(x, dim=0)
+
+#network used in arxiv 1906.03139
+class MNIST_30K(nn.Module):
+  def __init__(self):
+    super(MNIST_30K, self).__init__()
+    self.num_filter1 = 16
+    self.num_filter2 = 32
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding, bias=True)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding, bias=True)
+    # feature map size is 7*7 by pooling
+    self.fc = nn.Linear(self.num_filter2*7*7, 10, bias=True)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc(x)
+    return F.log_softmax(x, dim=0)
+
+#network used in arxiv 1906.03139
+class MNIST_500K(nn.Module):
+  def __init__(self):
+    super(MNIST_500K, self).__init__()
+    self.num_filter1 = 32
+    self.num_filter2 = 64
+    self.num_padding = 2
+    # input is 28x28
+    # padding=2 for same padding
+    self.conv1 = nn.Conv2d(1, self.num_filter1, 5, padding=self.num_padding, bias=True)
+    # feature map size is 14*14 by pooling
+    # padding=2 for same padding
+    self.conv2 = nn.Conv2d(self.num_filter1, self.num_filter2, 5, padding=self.num_padding, bias=True)
+    # feature map size is 7*7 by pooling
+    self.fc1 = nn.Linear(self.num_filter2*7*7, 128, bias=True)
+    self.fc2 = nn.Linear(128, 10, bias=True)
+
+  def forward(self, x):
+    x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+    x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+    x = x.view(-1, self.num_filter2*7*7)   # reshape Variable
+    x = self.fc1(x)
+    x = self.fc2(x)
+    return F.log_softmax(x, dim=0)
 
 class LeNet(nn.Module):
     def __init__(self):
@@ -274,6 +370,9 @@ def train(epoch, train_loader, model, criterion, optimizer, args):
             optimizer.step()
         else:
             optimizer.step(data, target)
+        if batch_idx == 49 and args.profile:
+            print("Early termination after profiling 50 batches")
+            return
         if batch_idx % args.log_interval == 0 and args.verbose:
             if args.backprop:
                 loss_val = loss.item()
@@ -310,7 +409,7 @@ def test(test_loader, model, criterion, optimizer, args):
 if __name__ == "__main__":
     
     # Training settings
-    parser = argparse.ArgumentParser(description='Neuroevolution PyTorch CIFAR10 Example')
+    parser = argparse.ArgumentParser(description='Neuroevolution PyTorch MNIST Example')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
@@ -338,32 +437,77 @@ if __name__ == "__main__":
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--topology', type=str, choices=['LeNet','c10q','NiN','CIF_300K','CIF_900K','CIF_8M'],
-	                    default='LeNet', help='NN topology (default: LeNet)')
     parser.add_argument('--popsize', type=int, default=100, metavar='N',
                         help='population size (default: 100)')
     parser.add_argument('--noise-dist', type=str, default="Gaussian",
                         help='noise distribution (default: Gaussian)')
     parser.add_argument('--sigma', type=float, default=0.01, metavar='S',
                         help='noise variance (default: 0.01)')
-    parser.add_argument('--sampling', type=str, default="Antithetic",
-                        help='sampling strategy (default: Antithetic)')
-    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
-                        help='choose which neuroevolution optimizer to use')
+    parser.add_argument('--sampling', type=str, choices=['Antithetic','Normal'],
+                            default='Normal', help='sampling strategy (default: Normal)')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='enables printing loss during training')
+    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
+                        help='choose which neuroevolution optimizer to use')
+    parser.add_argument('--topology', type=str, choices=['MNIST_10K','MNIST_30K','MNIST_500K','MNIST_3M','LeNet','c10q','NiN','CIF_300K','CIF_900K','CIF_8M'],
+                            default='MNIST_10K', help='NN topology (default: MNIST_10K)')
+    parser.add_argument('--dataset', type=str, choices=['MNIST','CIFAR10'],
+                            default='MNIST', help='NN dataset (default: MNIST)')
+    parser.add_argument('--dataset-location', type=str, default="",
+                        help='dataset location on filesystem')
+    parser.add_argument('--profile', action='store_true', default=False,
+                        help='profile training process (default off)')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-
-    env = DarwiNNEnvironment(args.cuda)
     
-    dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    train_dataset = datasets.CIFAR10('CIFAR10_data_'+str(env.rank), train=True, download=True, transform=dataset_transform)
+    if args.profile:
+        args.verbose = False
+        args.no_test = True
+
+    if args.dataset == 'MNIST':
+        dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+        train_dataset = datasets.MNIST(args.dataset_location, train=True, download=True, transform=dataset_transform)
+        test_dataset = datasets.MNIST(args.dataset_location, train=False, download=False, transform=dataset_transform)
+        loss_criterion = F.nll_loss
+        if args.topology == 'MNIST_10K':
+            model = MNIST_10K()
+        elif args.topology == 'MNIST_30K':
+            model = MNIST_30K()
+        elif args.topology == 'MNIST_500K':
+            model = MNIST_500K()
+        elif args.topology == 'MNIST_3M':
+            model = MNIST_3M()
+        else:
+            raise ValueError("Requested topology not available for specified dataset")
+    elif args.dataset == 'CIFAR10':
+        dataset_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        train_dataset = datasets.CIFAR10(args.dataset_location, train=True, download=True, transform=dataset_transform)
+        test_dataset = datasets.CIFAR10(args.dataset_location, train=False, download=False, transform=dataset_transform)
+        loss_criterion = nn.CrossEntropyLoss()
+        if args.topology == 'LeNet':
+            model = LeNet()
+        elif args.topology == 'c10q':
+            model = c10q()
+        elif args.topology == 'NiN':
+            model = NiN()
+        elif args.topology == 'CIF_300K':
+            model = CIF_300K()
+        elif args.topology == 'CIF_900K':
+            model = CIF_900K()
+        elif args.topology == 'CIF_8M':
+            model = CIF_8M()
+        else:
+            raise ValueError("Requested topology not available for specified dataset")
     
     if args.backprop:
         args.ddp = True
+
+    print(args)
+
+    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+
+    env = DarwiNNEnvironment(args.cuda)
     
     if args.ddp:
         train_ddp_sampler = DistributedSampler(train_dataset)
@@ -371,22 +515,7 @@ if __name__ == "__main__":
     else:
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     
-    test_dataset = datasets.CIFAR10('CIFAR10_data_'+str(env.rank), train=False, download=False, transform=dataset_transform)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, **kwargs)
-    loss_criterion = nn.CrossEntropyLoss()
-    
-    if args.topology == 'LeNet':
-        model = LeNet()
-    elif args.topology == 'c10q':
-        model = c10q()
-    elif args.topology == 'NiN':
-        model = NiN()
-    elif args.topology == 'CIF_300K':
-        model = CIF_300K()
-    elif args.topology == 'CIF_900K':
-        model = CIF_900K()
-    elif args.topology == 'CIF_8M':
-        model = CIF_8M()
 
     if args.backprop:
         if args.cuda:
@@ -401,7 +530,17 @@ if __name__ == "__main__":
     else:
         optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
 
+    if args.profile:
+        duration = time.time()
+        
     for epoch in range(1, args.epochs + 1):
         train(epoch, train_loader, model, loss_criterion, optimizer, args)
         if (env.rank == 0 or args.backprop) and not args.no_test:
             test(test_loader, model, loss_criterion, optimizer, args)
+    
+    if args.profile:
+        duration = time.time() - duration
+        print("Duration: ",duration)
+        if args.cuda:
+            gpu_mem_utilization = torch.cuda.max_memory_allocated(device=torch.cuda.current_device())
+        print("GPU Max Allocated: ",gpu_mem_utilization)
