@@ -418,8 +418,15 @@ if __name__ == "__main__":
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
-    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
+    bp_opt = parser.add_mutually_exclusive_group()
+    bp_opt.add_argument('--sgd', action='store_true', default=False,
+                        help='selects SGD as mechanism for updating weights (default Off)')
+    bp_opt.add_argument('--adam', action='store_true', default=True,
+                        help='selects Adam as mechanism for updating weights (default On)')
+    parser.add_argument('--momentum', type=float, default=0.5,
                         help='SGD momentum (default: 0.5)')
+    parser.add_argument('--weight-decay', type=float, default=0.0001,
+                        help='SGD/Adam weight decay (default: 0.0001)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--no-test', action='store_true', default=False,
@@ -522,13 +529,18 @@ if __name__ == "__main__":
             model = DDP(model.cuda(), device_ids=[torch.cuda.current_device()], output_device=torch.cuda.current_device())
         else:
             model = DDP(model)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    elif args.ne_opt == 'OpenAI-ES':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-        #wrap optimizer into a OpenAI-ES optimizer
-        optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
+    
+    if args.sgd:
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     else:
-        optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
+        optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    
+    #if doing neuroevolution, wrap optimizer into a NE optimizer
+    if not args.backprop:
+        if args.ne_opt == 'OpenAI-ES':
+            optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
+        else:
+            optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
 
     if args.profile:
         duration = time.time()
