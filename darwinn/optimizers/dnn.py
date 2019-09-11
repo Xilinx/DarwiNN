@@ -189,10 +189,12 @@ class OpenAIESOptimizer(DarwiNNOptimizer):
         self.fitness_shaped = compute_centered_ranks(-self.fitness_for_update, device=self.environment.device)
 
     def adapt(self):
-        #compute gradient (with optional synchronization) and put it in theta
+        #compute gradient (with optional synchronization)
         torch.mv(self.epsilon.generate_update_noise().t(), self.fitness_shaped, out=self.gradient_for_update)
         #synchronize gradient
         self.environment.synchronize(self.gradient_for_sync, mode=self.gradient_sync_mode, lst=self.gradient_list)
+        #normalize gradient
+        self.gradient /= self.sigma * self.popsize
         #use gradients to update model and then get new theta
         self.update_grad(-self.gradient)
         self.optimizer.step()
