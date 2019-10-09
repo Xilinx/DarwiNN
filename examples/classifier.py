@@ -33,8 +33,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 from darwinn.utils.environment import DarwiNNEnvironment
-from darwinn.optimizers.dnn import OpenAIESOptimizer
-from darwinn.optimizers.dnn import GAOptimizer
+from darwinn.optimizers.dnn import *
 import argparse
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -482,7 +481,7 @@ if __name__ == "__main__":
                             default='Normal', help='sampling strategy (default: Normal)')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='enables printing loss during training')
-    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA'],
+    parser.add_argument('--ne-opt',default='OpenAI-ES',choices=['OpenAI-ES', 'GA', 'SNES'],
                         help='choose which neuroevolution optimizer to use')
     parser.add_argument('--topology', type=str, choices=['MNIST_10K','MNIST_30K','MNIST_500K','MNIST_3M','LeNet','c10q','NiN','CIF_300K','CIF_900K','CIF_8M'],
                             default='MNIST_10K', help='NN topology (default: MNIST_10K)')
@@ -567,7 +566,9 @@ if __name__ == "__main__":
     if not args.backprop:
         if args.ne_opt == 'OpenAI-ES':
             optimizer = OpenAIESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
-        else:
+        elif args.ne_opt == 'SNES':
+            optimizer = SNESOptimizer(env, model, loss_criterion, optimizer, sigma=args.sigma, popsize=args.popsize, distribution=args.noise_dist, sampling=args.sampling, data_parallel=args.ddp, semi_updates=args.semi_updates, orthogonal_updates=args.orthogonal_updates)
+        elif args.ne_opt == 'GA':
             optimizer = GAOptimizer(env, model, loss_criterion, sigma=args.sigma, popsize=args.popsize, data_parallel=args.ddp)
 
     if args.profile:

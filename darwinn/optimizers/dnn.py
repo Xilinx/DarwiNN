@@ -33,6 +33,7 @@ import copy
 import numpy as np
 import math
 from darwinn.utils.fitness import compute_centered_ranks
+from darwinn.utils.fitness import compute_normalized_ranks
 from darwinn.utils.noise import *
 
 class DarwiNNOptimizer(object):
@@ -283,3 +284,42 @@ class GAOptimizer(DarwiNNOptimizer):
             self.fitness_local[i] = self.criterion(output, target).item()
         self.loss = torch.mean(self.fitness_local).item()
 
+class SNESOptimizer(OpenAIESOptimizer):
+    """Implements Open-AI ES optimizer"""
+    def __init__(self, environment, model, criterion, optimizer, distribution="Gaussian", sampling="Antithetic", sigma=0.1, popsize=100, data_parallel=False, semi_updates=False, orthogonal_updates=False):
+        print(distribution)
+        super().__init__(environment, model, criterion, optimizer, distribution, sampling, sigma, popsize, data_parallel, semi_updates, orthogonal_updates)
+        self.sigma = torch.empty((self.num_parameters), device=self.environment.device)
+        self.sigma.fill_(sigma)
+        self.lr_theta = torch.tensor(0.001, device=self.environment.device)
+        self.lr_sigma = torch.tensor((3+torch.log(torch.tensor(self.num_parameters, dtype=torch.float))) / (5 * torch.sqrt(torch.tensor(self.num_parameters,dtype=torch.float))), device = self.environment.device)
+        self.theta = torch.zeros((self.num_parameters), device=self.environment.device)
+
+    def select(self):
+        #compute utility based on arXiv:1906.03139
+        self.fitness_shaped = compute_normalized_ranks(self.fitness_for_update, r=0.5, device=self.environment.device)
+        self.utilities = self.fitness_shaped.view(len(self.fitness_shaped), 1)
+
+    def adapt(self):
+        #calculate theta gradient based on 10.1145/2001576.2001692
+        self.theta_gradient = torch.mm(self.epsilon.generate_update_noise().t(), self.utilities)
+        self.theta_gradient = self.theta_gradient.view(self.num_parameters)
+        #calculate sigma gradient based on 10.1145/2001576.2001692
+        self.sigma_gradient = torch.mm(( (self.epsilon.generate_update_noise()*self.epsilon.generate_update_noise()) - 1).t(), self.utilities)
+        self.sigma_gradient = self.sigma_gradient.view(self.num_parameters)
+        self.update_dist()
+        self.update_model(self.theta)
+    
+    def update_dist(self):
+        #update theta and sigma based on 10.1145/2001576.2001692
+        self.theta_gradient /= self.popsize
+        self.theta_gradient /= self.sigma
+        self.theta += self.lr_theta * self.theta_gradient
+        self.exponent = 0.5 * self.lr_sigma * self.sigma_gradient
+        self.sigma *= torch.exp(self.exponent) 
+    
+    def eval_theta(self, data, target):
+        self.update_model(self.theta)
+        output = self.model(data)
+        self.loss = self.criterion(output, target).item()
+        return output
