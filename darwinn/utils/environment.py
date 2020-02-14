@@ -41,9 +41,15 @@ class DarwiNNEnvironment(object):
     """Wrapper class for the environment setup API"""
     def __init__(self, cuda=True, seed=0):
         #initialize world (optimizer agnostic)
-        self.number_nodes = int(os.environ['OMPI_COMM_WORLD_SIZE'])
-        self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
-        self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        try:
+            self.number_nodes = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+            self.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+            self.local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        except:
+            print("Could not find OpenMPI environment, assuming single-node")
+            self.number_nodes = 1
+            self.rank = 0
+            self.local_rank = 0
         print("Rank ",self.rank," (local: ",self.local_rank,") of ",self.number_nodes)
         #set environment variables for Gloo/NCCL
         os.environ['WORLD_SIZE'] = str(self.number_nodes)
@@ -62,7 +68,8 @@ class DarwiNNEnvironment(object):
             backend = "gloo"
             self.device = torch.device('cpu')
         #initialize Torch Distributed environment
-        t_d.init_process_group(backend=backend, rank=self.rank, world_size=self.number_nodes) ##set group
+        if self.number_nodes > 1:
+            t_d.init_process_group(backend=backend, rank=self.rank, world_size=self.number_nodes) ##set group
         #configure local multiprocessing
         mp.set_start_method('spawn', force = True)
         torch.manual_seed(seed)
@@ -90,11 +97,15 @@ class DarwiNNEnvironment(object):
 
     #performs data synchronization between workers
     def synchronize(self, x, mode="NONE", lst=None):
+        print("Synchronize called with mode ",mode)
         if mode == "NONE":
             pass
         elif mode == "AVERAGE":
-            self.all_reduce(x)
-            x /= self.number_nodes
+            if self.number_nodes > 1:
+                self.all_reduce(x)
+                x /= self.number_nodes
+            else:
+                pass
         elif mode == "GATHER":
             if self.number_nodes > 1:
                 self.all_gather(x,lst)
